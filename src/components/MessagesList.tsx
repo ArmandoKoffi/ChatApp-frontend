@@ -1,4 +1,3 @@
-
 import { Check, CheckCheck } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuthContext } from '../contexts';
@@ -105,93 +104,155 @@ export function MessagesList({ selectedChat, onSelectChat, searchQuery = '' }: M
         });
       }
 
-      socketConnection.on('privateMessage', async (data) => {
-        const { senderId, content, messageId, timestamp } = data;
-        // Update the message list with the new message
+      // Fonction utilitaire pour mettre à jour ou ajouter un message
+      const updateOrAddMessage = (senderId: string, content: string, timestamp: string, isUnread: boolean = true, status: string = 'sent') => {
         setMessages((prev) => {
           const updatedMessages = [...prev];
           const index = updatedMessages.findIndex(msg => msg.id === senderId);
+          
           if (index !== -1) {
-            updatedMessages[index].lastMessage = content;
-            updatedMessages[index].time = new Date(timestamp).toLocaleTimeString();
-            updatedMessages[index].unread = true;
-            // Move to top of list
+            // Mettre à jour le message existant
+            updatedMessages[index] = {
+              ...updatedMessages[index],
+              lastMessage: content,
+              time: new Date(timestamp).toLocaleTimeString(),
+              unread: isUnread,
+              messageStatus: status
+            };
+            // Déplacer en haut de la liste
             const [updatedMsg] = updatedMessages.splice(index, 1);
             updatedMessages.unshift(updatedMsg);
           } else {
-            // If sender not in list, add with placeholder data
+            // Ajouter un nouveau message avec des données de base
             updatedMessages.unshift({
               id: senderId,
-              name: 'Unknown User',
-              avatar: '',
+              name: 'Chargement...',
+              avatar: '/placeholder.svg',
               lastMessage: content,
               time: new Date(timestamp).toLocaleTimeString(),
-              unread: true,
+              unread: isUnread,
               online: false,
-              messageStatus: 'sent'
+              messageStatus: status
             });
           }
           return updatedMessages;
         });
-        // Fetch updated user data for avatar
+      };
+
+      // Fonction pour récupérer et mettre à jour les données utilisateur
+      const fetchAndUpdateUserData = async (userId: string) => {
         try {
           const api = (await import('../services/api')).default;
-          const response = await api.get(`/users/${senderId}`);
+          const response = await api.get(`/users/${userId}`);
           if (response.data.success) {
             const userData = response.data.data;
             setMessages((prev) => {
               const updatedMessages = [...prev];
-              const index = updatedMessages.findIndex(msg => msg.id === senderId);
+              const index = updatedMessages.findIndex(msg => msg.id === userId);
               if (index !== -1) {
-                updatedMessages[index].name = userData.username || 'Unknown User';
-                updatedMessages[index].avatar = userData.profilePicture || '/placeholder.svg';
-                updatedMessages[index].online = userData.isOnline || false;
+                updatedMessages[index] = {
+                  ...updatedMessages[index],
+                  name: userData.username || 'Unknown User',
+                  avatar: userData.profilePicture || '/placeholder.svg',
+                  online: userData.isOnline || false
+                };
               }
               return updatedMessages;
             });
           }
         } catch (err) {
-          console.error("Error fetching user data for message update:", err);
+          console.error("Error fetching user data:", err);
         }
+      };
+
+      // Écouter les messages privés reçus
+      socketConnection.on('privateMessage', async (data) => {
+        const { senderId, content, messageId, timestamp } = data;
+        console.log('Message reçu:', data);
+        
+        // Mettre à jour immédiatement avec le contenu
+        updateOrAddMessage(senderId, content, timestamp, true, 'sent');
+        
+        // Récupérer les données utilisateur pour mettre à jour l'avatar et le nom
+        await fetchAndUpdateUserData(senderId);
       });
 
+      // Écouter les messages privés envoyés
       socketConnection.on('privateMessageSent', async (data) => {
         const { receiverId, content, messageId, timestamp } = data;
-        // Update the message list with the sent message
+        console.log('Message envoyé:', data);
+        
+        // Mettre à jour le message envoyé
+        updateOrAddMessage(receiverId, content, timestamp, false, 'sent');
+        
+        // Récupérer les données utilisateur pour s'assurer que l'avatar est à jour
+        await fetchAndUpdateUserData(receiverId);
+      });
+
+      // Écouter les mises à jour de profil en temps réel
+      socketConnection.on('profileUpdate', (data) => {
+        const { userId, profilePicture, username, isOnline } = data;
+        console.log('Mise à jour de profil reçue:', data);
+        
         setMessages((prev) => {
           const updatedMessages = [...prev];
-          const index = updatedMessages.findIndex(msg => msg.id === receiverId);
+          const index = updatedMessages.findIndex(msg => msg.id === userId);
           if (index !== -1) {
-            updatedMessages[index].lastMessage = content;
-            updatedMessages[index].time = new Date(timestamp).toLocaleTimeString();
-            updatedMessages[index].unread = false;
-            updatedMessages[index].messageStatus = 'sent';
-            // Move to top of list
-            const [updatedMsg] = updatedMessages.splice(index, 1);
-            updatedMessages.unshift(updatedMsg);
+            updatedMessages[index] = {
+              ...updatedMessages[index],
+              avatar: profilePicture || updatedMessages[index].avatar,
+              name: username || updatedMessages[index].name,
+              online: isOnline !== undefined ? isOnline : updatedMessages[index].online
+            };
           }
           return updatedMessages;
         });
       });
 
-      socketConnection.on('profileUpdate', async (data) => {
-        const { userId, profilePicture, username, isOnline } = data;
+      // Écouter les mises à jour du statut de lecture
+      socketConnection.on('messageRead', (data) => {
+        const { messageId, userId } = data;
+        console.log('Message lu:', data);
+        
         setMessages((prev) => {
           const updatedMessages = [...prev];
           const index = updatedMessages.findIndex(msg => msg.id === userId);
           if (index !== -1) {
-            updatedMessages[index].avatar = profilePicture || '/placeholder.svg';
-            updatedMessages[index].name = username || updatedMessages[index].name;
-            updatedMessages[index].online = isOnline !== undefined ? isOnline : updatedMessages[index].online;
+            updatedMessages[index] = {
+              ...updatedMessages[index],
+              messageStatus: 'read'
+            };
+          }
+          return updatedMessages;
+        });
+      });
+
+      // Écouter les mises à jour du statut en ligne
+      socketConnection.on('userStatusUpdate', (data) => {
+        const { userId, isOnline } = data;
+        console.log('Statut utilisateur mis à jour:', data);
+        
+        setMessages((prev) => {
+          const updatedMessages = [...prev];
+          const index = updatedMessages.findIndex(msg => msg.id === userId);
+          if (index !== -1) {
+            updatedMessages[index] = {
+              ...updatedMessages[index],
+              online: isOnline
+            };
           }
           return updatedMessages;
         });
       });
 
       return () => {
-        if (!(window as WindowWithSocket).socket) {
-          socketConnection.disconnect();
-        }
+        // Ne pas déconnecter le socket ici car il peut être utilisé ailleurs
+        // Juste retirer les listeners spécifiques à ce composant
+        socketConnection.off('privateMessage');
+        socketConnection.off('privateMessageSent');
+        socketConnection.off('profileUpdate');
+        socketConnection.off('messageRead');
+        socketConnection.off('userStatusUpdate');
       };
     }
   }, [user]);
@@ -212,6 +273,22 @@ export function MessagesList({ selectedChat, onSelectChat, searchQuery = '' }: M
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-32">
+        <div className="text-gray-500">Chargement des messages...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex justify-center items-center h-32">
+        <div className="text-red-500">{error}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       {filteredMessages.map((message) => (
@@ -227,6 +304,10 @@ export function MessagesList({ selectedChat, onSelectChat, searchQuery = '' }: M
               src={message.avatar || '/placeholder.svg'} 
               alt={message.name}
               className="w-12 h-12 rounded-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.src = '/placeholder.svg';
+              }}
             />
             {message.online && (
               <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white"></div>
@@ -251,9 +332,13 @@ export function MessagesList({ selectedChat, onSelectChat, searchQuery = '' }: M
         </div>
       ))}
       
-      {filteredMessages.length === 0 && searchQuery && (
+      {filteredMessages.length === 0 && !loading && (
         <div className="text-center py-8 text-gray-500">
-          <p>Aucun résultat trouvé pour "{searchQuery}"</p>
+          {searchQuery ? (
+            <p>Aucun résultat trouvé pour "{searchQuery}"</p>
+          ) : (
+            <p>Aucune conversation trouvée</p>
+          )}
         </div>
       )}
     </div>
