@@ -74,7 +74,6 @@ export function MessagesList({ selectedChat, onSelectChat, searchQuery = '' }: M
 
   useEffect(() => {
     if (user) {
-      // Check if socket already exists to prevent multiple connections
       let socketConnection;
       if ((window as WindowWithSocket).socket) {
         socketConnection = (window as WindowWithSocket).socket;
@@ -89,52 +88,42 @@ export function MessagesList({ selectedChat, onSelectChat, searchQuery = '' }: M
           console.log('MessagesList connected to Socket.IO server');
           socketConnection.emit('join', user._id);
         });
-
-        socketConnection.on('disconnect', () => {
-          console.log('MessagesList disconnected from Socket.IO server');
-        });
-
-        socketConnection.on('reconnect', () => {
-          console.log('MessagesList reconnected to Socket.IO server');
-          socketConnection.emit('join', user._id);
-        });
-
-        socketConnection.on('connect_error', (error) => {
-          console.error('MessagesList Socket.IO connection error:', error);
-        });
       }
 
-      // Fonction utilitaire pour mettre à jour ou ajouter un message
-      const updateOrAddMessage = (senderId: string, content: string, timestamp: string, isUnread: boolean = true, status: string = 'sent') => {
+      // Fonction optimisée pour mettre à jour les messages
+      const updateMessageInList = (userId: string, updates: Partial<Message>) => {
         setMessages((prev) => {
           const updatedMessages = [...prev];
-          const index = updatedMessages.findIndex(msg => msg.id === senderId);
+          const index = updatedMessages.findIndex(msg => msg.id === userId);
           
           if (index !== -1) {
-            // Mettre à jour le message existant
             updatedMessages[index] = {
               ...updatedMessages[index],
-              lastMessage: content,
-              time: new Date(timestamp).toLocaleTimeString(),
-              unread: isUnread,
-              messageStatus: status
+              ...updates
             };
-            // Déplacer en haut de la liste
-            const [updatedMsg] = updatedMessages.splice(index, 1);
-            updatedMessages.unshift(updatedMsg);
-          } else {
-            // Ajouter un nouveau message avec des données de base
+            
+            // Si c'est un nouveau message, déplacer en haut
+            if (updates.lastMessage) {
+              const [updatedMsg] = updatedMessages.splice(index, 1);
+              updatedMessages.unshift(updatedMsg);
+            }
+          } else if (updates.lastMessage) {
+            // Nouveau message d'un utilisateur inconnu
             updatedMessages.unshift({
-              id: senderId,
+              id: userId,
               name: 'Chargement...',
               avatar: '/placeholder.svg',
-              lastMessage: content,
-              time: new Date(timestamp).toLocaleTimeString(),
-              unread: isUnread,
-              online: false,
-              messageStatus: status
+              lastMessage: updates.lastMessage || '',
+              time: updates.time || new Date().toLocaleTimeString(),
+              unread: updates.unread || false,
+              online: updates.online || false,
+              messageStatus: updates.messageStatus || 'sent'
             });
+            
+            // Charger les données utilisateur
+            fetchAndUpdateUserData(userId);
           }
+          
           return updatedMessages;
         });
       };
@@ -165,89 +154,48 @@ export function MessagesList({ selectedChat, onSelectChat, searchQuery = '' }: M
         }
       };
 
-      // Écouter les messages privés reçus
+      // Écouter les mises à jour de la liste de messages
+      socketConnection.on('messageListUpdate', (data) => {
+        const { senderId, lastMessage, timestamp, isUnread } = data;
+        console.log('Message list update:', data);
+        
+        updateMessageInList(senderId, {
+          lastMessage,
+          time: new Date(timestamp).toLocaleTimeString(),
+          unread: isUnread && senderId !== user._id,
+          messageStatus: isUnread ? 'sent' : 'read'
+        });
+      });
+
+      // Écouter les mises à jour de profil utilisateur
+      socketConnection.on('userProfileUpdated', (data) => {
+        const { userId, profilePicture, username } = data;
+        console.log('Profile updated:', data);
+        
+        updateMessageInList(userId, {
+          avatar: profilePicture,
+          name: username
+        });
+      });
+
+      // Conserver les autres événements existants...
       socketConnection.on('privateMessage', async (data) => {
-        const { senderId, content, messageId, timestamp } = data;
+        const { senderId, content, timestamp } = data;
         console.log('Message reçu:', data);
         
-        // Mettre à jour immédiatement avec le contenu
-        updateOrAddMessage(senderId, content, timestamp, true, 'sent');
+        updateMessageInList(senderId, {
+          lastMessage: content,
+          time: new Date(timestamp).toLocaleTimeString(),
+          unread: true,
+          messageStatus: 'sent'
+        });
         
-        // Récupérer les données utilisateur pour mettre à jour l'avatar et le nom
         await fetchAndUpdateUserData(senderId);
       });
 
-      // Écouter les messages privés envoyés
-      socketConnection.on('privateMessageSent', async (data) => {
-        const { receiverId, content, messageId, timestamp } = data;
-        console.log('Message envoyé:', data);
-        
-        // Mettre à jour le message envoyé
-        updateOrAddMessage(receiverId, content, timestamp, false, 'sent');
-        
-        // Récupérer les données utilisateur pour s'assurer que l'avatar est à jour
-        await fetchAndUpdateUserData(receiverId);
-      });
-
-      // Écouter les mises à jour de profil en temps réel
-      socketConnection.on('profileUpdate', (data) => {
-        const { userId, profilePicture, username, isOnline } = data;
-        console.log('Mise à jour de profil reçue:', data);
-        
-        setMessages((prev) => {
-          const updatedMessages = [...prev];
-          const index = updatedMessages.findIndex(msg => msg.id === userId);
-          if (index !== -1) {
-            updatedMessages[index] = {
-              ...updatedMessages[index],
-              avatar: profilePicture || updatedMessages[index].avatar,
-              name: username || updatedMessages[index].name,
-              online: isOnline !== undefined ? isOnline : updatedMessages[index].online
-            };
-          }
-          return updatedMessages;
-        });
-      });
-
-      // Écouter les mises à jour du statut de lecture
-      socketConnection.on('messageRead', (data) => {
-        const { messageId, userId } = data;
-        console.log('Message lu:', data);
-        
-        setMessages((prev) => {
-          const updatedMessages = [...prev];
-          const index = updatedMessages.findIndex(msg => msg.id === userId);
-          if (index !== -1) {
-            updatedMessages[index] = {
-              ...updatedMessages[index],
-              messageStatus: 'read'
-            };
-          }
-          return updatedMessages;
-        });
-      });
-
-      // Écouter les mises à jour du statut en ligne
-      socketConnection.on('userStatusUpdate', (data) => {
-        const { userId, isOnline } = data;
-        console.log('Statut utilisateur mis à jour:', data);
-        
-        setMessages((prev) => {
-          const updatedMessages = [...prev];
-          const index = updatedMessages.findIndex(msg => msg.id === userId);
-          if (index !== -1) {
-            updatedMessages[index] = {
-              ...updatedMessages[index],
-              online: isOnline
-            };
-          }
-          return updatedMessages;
-        });
-      });
-
       return () => {
-        // Ne pas déconnecter le socket ici car il peut être utilisé ailleurs
-        // Juste retirer les listeners spécifiques à ce composant
+        socketConnection.off('messageListUpdate');
+        socketConnection.off('userProfileUpdated');
         socketConnection.off('privateMessage');
         socketConnection.off('privateMessageSent');
         socketConnection.off('profileUpdate');
