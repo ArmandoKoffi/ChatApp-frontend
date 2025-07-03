@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react';
 import { Users, MessageCircle, Heart, UserCheck, Crown, Plus } from 'lucide-react';
 import { ChatRoom } from '@/types';
 import { useLanguage } from './LanguageContext';
+import { fetchChatRooms } from '../services/chatRoomService';
 
 interface ChatRoomsProps {
   onRoomSelect: (roomId: string) => void;
@@ -12,58 +14,19 @@ interface ChatRoomsProps {
 export function ChatRooms({ onRoomSelect, selectedRoom, userRole, searchQuery = '' }: ChatRoomsProps) {
   const { t } = useLanguage();
 
-  const chatRooms: ChatRoom[] = [
-    {
-      id: 'amis',
-      name: t('amis'),
-      description: t('amisDesc'),
-      type: 'amis',
-      connectedUsers: 24,
-      maxUsers: 100,
-      isActive: true,
-      createdAt: new Date(),
-    },
-    {
-      id: 'rencontres',
-      name: t('rencontres'),
-      description: t('rencontresDesc'),
-      type: 'rencontres',
-      connectedUsers: 18,
-      maxUsers: 50,
-      isActive: true,
-      createdAt: new Date(),
-    },
-    {
-      id: 'connaissances',
-      name: t('connaissances'),
-      description: t('connaissancesDesc'),
-      type: 'connaissances',
-      connectedUsers: 31,
-      maxUsers: 80,
-      isActive: true,
-      createdAt: new Date(),
-    },
-    {
-      id: 'mariage',
-      name: t('mariage'),
-      description: t('mariageDesc'),
-      type: 'mariage',
-      connectedUsers: 12,
-      maxUsers: 30,
-      isActive: true,
-      createdAt: new Date(),
-    },
-    {
-      id: 'general',
-      name: t('general'),
-      description: t('generalDesc'),
-      type: 'general',
-      connectedUsers: 45,
-      maxUsers: 150,
-      isActive: true,
-      createdAt: new Date(),
-    },
-  ];
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+
+  useEffect(() => {
+    const loadChatRooms = async () => {
+      try {
+        const rooms = await fetchChatRooms();
+        setChatRooms(rooms);
+      } catch (error) {
+        console.error('Failed to load chat rooms:', error);
+      }
+    };
+    loadChatRooms();
+  }, []);
 
   const filteredRooms = chatRooms.filter(room =>
     room.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
