@@ -45,59 +45,62 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const { user } = useAuthContext();
   const [searchQuery, setSearchQuery] = useState("");
-  const [onlineUsers, setOnlineUsers] = useState<{ id: string, username: string, profilePicture: string }[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<{ id: string, username: string, profilePicture: string, isOnline: boolean }[]>([]);
   
   useEffect(() => {
     const socket = io('https://chatapp-shi2.onrender.com', {
       transports: ['websocket'],
       path: '/socket.io'
     });
+
     socket.on('connect', () => {
       console.log('Connected to Socket.IO server');
       if (user) {
         socket.emit('join', user._id);
       }
     });
-    
+
     socket.on('onlineUsers', async (userIds) => {
       console.log('Received online users:', userIds);
       if (user) {
-        // Filter out the current user from the list
-        const filteredUserIds = userIds.filter(id => id !== user._id);
-        // Fetch user details for each ID
         try {
-          const userDetails = [];
-          for (const userId of filteredUserIds) {
-            const response = await fetch(`https://chatapp-shi2.onrender.com/api/users/${userId}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-              }
-            });
-            if (response.ok) {
-              const data = await response.json();
-              if (data.success) {
-                userDetails.push({
-                  id: data.data._id,
-                  username: data.data.username,
-                  profilePicture: data.data.profilePicture || ''
-                });
-              }
+          const response = await fetch(`https://chatapp-shi2.onrender.com/api/users/online`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+            }
+          });
+          if (response.ok) {
+            const data = await response.json();
+            if (data.success) {
+              setOnlineUsers(data.data.map((u: { _id: string, username: string, profilePicture: string, isOnline: boolean }) => ({
+                id: u._id,
+                username: u.username,
+                profilePicture: u.profilePicture || '',
+                isOnline: u.isOnline
+              })));
             }
           }
-          setOnlineUsers(userDetails);
         } catch (error) {
-          console.error('Error fetching user details:', error);
-          setOnlineUsers([]);
+          console.error('Error fetching online users:', error);
         }
-      } else {
-        setOnlineUsers([]);
       }
     });
-    
+
+    socket.on('profileUpdate', (data) => {
+      setOnlineUsers(prev => prev.map(u => 
+        u.id === data.userId ? { 
+          ...u, 
+          profilePicture: data.profilePicture || u.profilePicture,
+          username: data.username || u.username,
+          isOnline: data.isOnline !== undefined ? data.isOnline : u.isOnline
+        } : u
+      ));
+    });
+
     socket.on('disconnect', () => {
       console.log('Disconnected from Socket.IO server');
     });
-    
+
     return () => {
       socket.disconnect();
     };
@@ -271,8 +274,14 @@ export function ChatSidebar({
                       src={onlineUser.profilePicture || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}
                       alt={onlineUser.username}
                       className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                      }}
                     />
-                    <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-white"></div>
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${
+                      onlineUser.isOnline ? 'bg-green-400' : 'bg-gray-400'
+                    }`}></div>
                   </div>
                 ))}
                 {onlineUsers.length === 0 && (
