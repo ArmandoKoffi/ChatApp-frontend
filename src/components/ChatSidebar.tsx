@@ -45,46 +45,58 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const { user } = useAuthContext();
   const [searchQuery, setSearchQuery] = useState("");
-  const [onlineUsers, setOnlineUsers] = useState<{ id: string, username: string, profilePicture: string, isOnline: boolean }[]>([]);
+  const [onlineUsers, setOnlineUsers] = useState<{
+    id: string;
+    username: string;
+    profilePicture: string;
+    isOnline: boolean;
+  }[]>([]);
   
   useEffect(() => {
     const socket = io('https://chatapp-shi2.onrender.com', {
       transports: ['websocket'],
-      path: '/socket.io'
+      path: '/socket.io',
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000
     });
+
+    const fetchOnlineUsers = async () => {
+      try {
+        const response = await fetch(`https://chatapp-shi2.onrender.com/api/users/online`, {
+          headers: {
+            'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch online users');
+        }
+
+        const data = await response.json();
+        if (data.success) {
+          setOnlineUsers(data.data.map((u: { _id: string; username: string; profilePicture: string; isOnline: boolean }) => ({
+            id: u._id,
+            username: u.username,
+            profilePicture: u.profilePicture || '',
+            isOnline: u.isOnline
+          })));
+        }
+      } catch (error) {
+        console.error('Error fetching online users:', error);
+        setOnlineUsers([]);
+      }
+    };
 
     socket.on('connect', () => {
       console.log('Connected to Socket.IO server');
       if (user) {
         socket.emit('join', user._id);
+        fetchOnlineUsers();
       }
     });
 
-    socket.on('onlineUsers', async (userIds) => {
-      console.log('Received online users:', userIds);
-      if (user) {
-        try {
-          const response = await fetch(`https://chatapp-shi2.onrender.com/api/users/online`, {
-            headers: {
-              'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
-            }
-          });
-          if (response.ok) {
-            const data = await response.json();
-            if (data.success) {
-              setOnlineUsers(data.data.map((u: { _id: string, username: string, profilePicture: string, isOnline: boolean }) => ({
-                id: u._id,
-                username: u.username,
-                profilePicture: u.profilePicture || '',
-                isOnline: u.isOnline
-              })));
-            }
-          }
-        } catch (error) {
-          console.error('Error fetching online users:', error);
-        }
-      }
-    });
+    socket.on('onlineUsers', fetchOnlineUsers);
 
     socket.on('profileUpdate', (data) => {
       setOnlineUsers(prev => prev.map(u => 
@@ -97,8 +109,8 @@ export function ChatSidebar({
       ));
     });
 
-    socket.on('disconnect', () => {
-      console.log('Disconnected from Socket.IO server');
+    socket.on('connect_error', (error) => {
+      console.error('Socket connection error:', error);
     });
 
     return () => {
@@ -196,10 +208,10 @@ export function ChatSidebar({
         <div className="w-12 h-12 rounded-full bg-gray-300 overflow-hidden animate-scale-in cursor-pointer mb-6">
           <img
             src={user?.profilePicture || ""}
-            alt={t('profile')}
+            alt={t("profile")}
             className="w-full h-full object-cover bg-gray-300 hover:scale-105 transition-transform duration-200"
             onClick={() => onViewChange("profile")}
-            title={t('profile')}
+            title={t("profile")}
           />
         </div>
 
@@ -263,29 +275,34 @@ export function ChatSidebar({
                 {t("online")}
               </h3>
               <div className="flex overflow-x-auto space-x-2 pb-2">
-                {onlineUsers.map((onlineUser, index) => (
-                  <div 
-                    key={onlineUser.id} 
-                    className="flex-shrink-0 relative cursor-pointer animate-fade-in hover:scale-105 transition-transform duration-200"
-                    style={{ animationDelay: `${index * 0.1}s` }}
-                    onClick={() => onSelectChat(onlineUser.id)}
-                  >
-                    <img
-                      src={onlineUser.profilePicture || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}
-                      alt={onlineUser.username}
-                      className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-                      }}
-                    />
-                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${
-                      onlineUser.isOnline ? 'bg-green-400' : 'bg-gray-400'
-                    }`}></div>
-                  </div>
-                ))}
-                {onlineUsers.length === 0 && (
-                  <p className="text-gray-500 text-xs italic text-center w-full">{t("noOnlineUsers")}</p>
+                {onlineUsers.length > 0 ? (
+                  onlineUsers.map((onlineUser, index) => (
+                    <div
+                      key={onlineUser.id}
+                      className="flex-shrink-0 relative cursor-pointer animate-fade-in hover:scale-105 transition-transform duration-200"
+                      style={{ animationDelay: `${index * 0.1}s` }}
+                      onClick={() => onSelectChat(onlineUser.id)}
+                    >
+                      <img
+                        src={onlineUser.profilePicture || "default-profile.png"}
+                        alt={onlineUser.username}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.src = "default-profile.png";
+                        }}
+                      />
+                      <div
+                        className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white ${
+                          onlineUser.isOnline ? "bg-green-400" : "bg-gray-400"
+                        }`}
+                      ></div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-gray-500 text-xs italic text-center w-full">
+                    {t("Aucun utilisateur en ligne")}
+                  </p>
                 )}
               </div>
             </div>
