@@ -87,6 +87,17 @@ export function ChatSidebar({
         setOnlineUsers([]);
       }
     };
+    
+    // Prevent excessive retries by limiting how often fetchOnlineUsers is called
+    let fetchTimeout: NodeJS.Timeout | null = null;
+    const debouncedFetchOnlineUsers = () => {
+      if (fetchTimeout) {
+        clearTimeout(fetchTimeout);
+      }
+      fetchTimeout = setTimeout(() => {
+        fetchOnlineUsers();
+      }, 5000); // Delay of 5 seconds to prevent flooding with requests
+    };
 
     socket.on('connect', () => {
       console.log('Connected to Socket.IO server');
@@ -96,7 +107,7 @@ export function ChatSidebar({
       }
     });
 
-    socket.on('onlineUsers', fetchOnlineUsers);
+    socket.on('onlineUsers', debouncedFetchOnlineUsers);
 
     socket.on('profileUpdate', (data) => {
       setOnlineUsers(prev => prev.map(u => 
