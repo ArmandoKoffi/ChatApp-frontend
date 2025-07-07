@@ -174,7 +174,7 @@ export function ChatSidebar({
             <button
               onClick={handleLogout}
               className="w-8 h-8 p-1 rounded-lg transition-all duration-300 transform hover:scale-110 animate-fade-in text-gray-500 hover:bg-red-100 hover:text-red-500"
-              title={t("logout")}
+              title={t("Déconnexion")}
             >
               <LogOut className="w-6 h-6" />
             </button>
@@ -224,7 +224,7 @@ export function ChatSidebar({
           <button
             onClick={handleLogout}
             className="w-8 h-8 p-1 rounded-lg transition-all duration-300 transform hover:scale-110 animate-fade-in hover:rotate-12 text-gray-500 hover:bg-red-100 hover:text-red-500"
-            title={t("logout")}
+            title={t("Déconnexion")}
           >
             <LogOut className="w-6 h-6" />
           </button>
@@ -243,8 +243,8 @@ export function ChatSidebar({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 xs:pl-12 pr-3 xs:pr-5 py-3 bg-gray-100 rounded-full text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all duration-200 input-focus shadow-md border border-gray-300"
-                aria-label={t("searchConversations")}
-                placeholder={t("searchConversations")}
+                aria-label={t("Rechercher une conversation")}
+                placeholder={t("Rechercher une conversation")}
                 autoFocus
               />
             </div>
@@ -257,7 +257,7 @@ export function ChatSidebar({
             {/* Online Users Section - Using real-time data from Socket.IO */}
             <div className="px-2 xs:px-3 sm:px-4 py-1.5 xs:py-2 sm:py-3 border-b border-gray-100">
               <h3 className="text-sm font-semibold text-gray-900 mb-2 sm:mb-3 flex items-center animate-slide-in-right">
-                {t("online")}
+                {t("En ligne")}
               </h3>
               <div className="flex overflow-x-auto space-x-2 pb-2">
                 {onlineUsers.map((onlineUser, index) => (
@@ -276,7 +276,7 @@ export function ChatSidebar({
                   </div>
                 ))}
                 {onlineUsers.length === 0 && (
-                  <p className="text-gray-500 text-xs italic text-center w-full">{t("noOnlineUsers")}</p>
+                  <p className="text-gray-500 text-xs italic text-center w-full">{t("Aucun utilisateur en ligne")}</p>
                 )}
               </div>
             </div>
@@ -284,7 +284,7 @@ export function ChatSidebar({
             {/* Messages List */}
             <div className="px-2 xs:px-3 sm:px-4 py-1.5 xs:py-2 sm:py-3">
               <h3 className="text-sm font-semibold text-gray-900 mb-2 sm:mb-3 flex items-center animate-slide-in-right">
-                {t("messages")}
+                {t("Messages")}
               </h3>
               <MessagesList
                 selectedChat={selectedChat}
@@ -300,7 +300,7 @@ export function ChatSidebar({
             <div className="px-2 xs:px-3 sm:px-4 py-1.5 xs:py-2 sm:py-3">
               <h3 className="text-xs xs:text-sm font-semibold text-gray-900 mb-1.5 xs:mb-2 sm:mb-3 flex items-center animate-slide-in-right">
                 <Users className="w-3 h-3 xs:w-4 h-4 mr-1 xs:mr-2 text-green-500" />
-                {t("chatRooms")}
+                {t("Salons de discussion")}
               </h3>
               <ChatRooms
                 onRoomSelect={onRoomSelect}
