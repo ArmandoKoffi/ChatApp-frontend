@@ -155,9 +155,14 @@ export function MessagesList({
           const index = updatedMessages.findIndex((msg) => msg.id === userId);
 
           if (index !== -1) {
+            // Préserver les données existantes importantes comme avatar et name
+            const existingMessage = updatedMessages[index];
             updatedMessages[index] = {
-              ...updatedMessages[index],
+              ...existingMessage,
               ...updates,
+              // S'assurer que l'avatar et le nom ne sont pas écrasés par des valeurs vides
+              avatar: updates.avatar || existingMessage.avatar || "/placeholder.svg",
+              name: updates.name || existingMessage.name || "Utilisateur",
             };
 
             // Si c'est un nouveau message, déplacer en haut
@@ -166,19 +171,21 @@ export function MessagesList({
               updatedMessages.unshift(updatedMsg);
             }
           } else if (updates.lastMessage) {
-            // Nouveau message d'un utilisateur inconnu
-            updatedMessages.unshift({
+            // Ajouter un nouvel utilisateur si il n'existe pas et qu'il y a un message
+            const newMessage: Message = {
               id: userId,
-              name: "Chargement...",
+              name: "Utilisateur",
               avatar: "/placeholder.svg",
-              lastMessage: updates.lastMessage || "",
-              time: updates.time || new Date().toLocaleTimeString(),
-              unread: updates.unread || false,
-              online: updates.online || false,
-              messageStatus: updates.messageStatus || "sent",
-            });
-
-            // Charger les données utilisateur
+              lastMessage: "",
+              time: "",
+              unread: false,
+              online: false,
+              messageStatus: "sent",
+              ...updates,
+            };
+            updatedMessages.unshift(newMessage);
+            
+            // Récupérer les données utilisateur en arrière-plan
             fetchAndUpdateUserData(userId);
           }
 
@@ -222,24 +229,27 @@ export function MessagesList({
               }
             };
             
+            // Mettre à jour seulement les données utilisateur, pas les données de message
             setMessages((prev) => {
               const updatedMessages = [...prev];
               const index = updatedMessages.findIndex(
                 (msg) => msg.id === userId
               );
+              
               if (index !== -1) {
                 updatedMessages[index] = {
                   ...updatedMessages[index],
-                  name: userData.username || "Unknown User",
+                  name: userData.username || updatedMessages[index].name || "Utilisateur",
                   avatar: getValidProfilePicture(userData.profilePicture),
-                  online: userData.isOnline || false,
+                  online: userData.isOnline !== undefined ? userData.isOnline : updatedMessages[index].online,
                 };
               }
+              
               return updatedMessages;
             });
           }
-        } catch (err) {
-          console.error("Error fetching user data:", err);
+        } catch (error) {
+          console.error("Erreur lors de la récupération des données utilisateur:", error);
         }
       };
 
