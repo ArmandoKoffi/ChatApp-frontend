@@ -17,7 +17,7 @@ import { ChatRooms } from "./ChatRooms";
 import { OnlineUsers } from "./OnlineUsers";
 import { CurrentView } from "@/types";
 import { useState, useEffect } from "react";
-import io from 'socket.io-client';
+import io from "socket.io-client";
 import { useLanguage } from "./LanguageContext";
 
 interface ChatSidebarProps {
@@ -45,59 +45,66 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const { user } = useAuthContext();
   const [searchQuery, setSearchQuery] = useState("");
-  const [onlineUsers, setOnlineUsers] = useState<{ id: string, username: string, profilePicture: string }[]>([]);
-  
+  const [onlineUsers, setOnlineUsers] = useState<
+    { id: string; username: string; profilePicture: string }[]
+  >([]);
+
   useEffect(() => {
-    const socket = io('https://chatapp-shi2.onrender.com', {
-      transports: ['websocket'],
-      path: '/socket.io'
+    const socket = io("https://chatapp-shi2.onrender.com", {
+      transports: ["websocket"],
+      path: "/socket.io",
     });
-    socket.on('connect', () => {
-      console.log('Connected to Socket.IO server');
+    socket.on("connect", () => {
+      console.log("Connected to Socket.IO server");
       if (user) {
-        socket.emit('join', user._id);
+        socket.emit("join", user._id);
       }
     });
-    
-    socket.on('onlineUsers', async (userIds) => {
-      console.log('Received online users:', userIds);
+
+    socket.on("onlineUsers", async (userIds) => {
+      console.log("Received online users:", userIds);
       if (user) {
         // Filter out the current user from the list
-        const filteredUserIds = userIds.filter(id => id !== user._id);
+        const filteredUserIds = userIds.filter((id) => id !== user._id);
         // Fetch user details for each ID
         try {
           const userDetails = [];
           for (const userId of filteredUserIds) {
-            const response = await fetch(`https://chatapp-shi2.onrender.com/api/users/${userId}`, {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token') || ''}`
+            const response = await fetch(
+              `https://chatapp-shi2.onrender.com/api/users/${userId}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${
+                    localStorage.getItem("token") || ""
+                  }`,
+                },
               }
-            });
+            );
             if (response.ok) {
               const data = await response.json();
               if (data.success) {
                 userDetails.push({
                   id: data.data._id,
                   username: data.data.username,
-                  profilePicture: data.data.profilePicture || ''
+                  profilePicture: data.data.profilePicture || "",
                 });
               }
             }
           }
           setOnlineUsers(userDetails);
         } catch (error) {
-          console.error('Error fetching user details:', error);
+          console.error("Error fetching user details:", error);
           setOnlineUsers([]);
         }
       } else {
         setOnlineUsers([]);
       }
     });
-    
-    socket.on('disconnect', () => {
-      console.log('Disconnected from Socket.IO server');
+
+    socket.on("disconnect", () => {
+      console.log("Disconnected from Socket.IO server");
     });
-    
+
     return () => {
       socket.disconnect();
     };
@@ -131,7 +138,7 @@ export function ChatSidebar({
     await logout();
     onLogout();
     // Navigate to the landing page after logout to avoid loading state issues
-    window.location.href = '/';
+    window.location.href = "/";
   };
 
   if (!isDiscussionMode) {
@@ -141,12 +148,12 @@ export function ChatSidebar({
         <div className="w-16 bg-gray-200 flex flex-col items-center py-6">
           {/* Profile Avatar at top */}
           <div className="w-12 h-12 rounded-full bg-gray-300 overflow-hidden animate-scale-in cursor-pointer mb-6">
-            <img 
-              src={user?.profilePicture || ""} 
-              alt={t('profile')}
+            <img
+              src={user?.profilePicture || ""}
+              alt={t("profile")}
               className="w-full h-full object-cover bg-gray-300 hover:scale-105 transition-transform duration-200"
-              onClick={() => onViewChange('profile')}
-              title={t('profile')}
+              onClick={() => onViewChange("profile")}
+              title={t("profile")}
             />
           </div>
 
@@ -193,10 +200,10 @@ export function ChatSidebar({
         <div className="w-12 h-12 rounded-full bg-gray-300 overflow-hidden animate-scale-in cursor-pointer mb-6">
           <img
             src={user?.profilePicture || ""}
-            alt={t('profile')}
+            alt={t("profile")}
             className="w-full h-full object-cover bg-gray-300 hover:scale-105 transition-transform duration-200"
             onClick={() => onViewChange("profile")}
-            title={t('profile')}
+            title={t("profile")}
           />
         </div>
 
@@ -261,14 +268,17 @@ export function ChatSidebar({
               </h3>
               <div className="flex overflow-x-auto space-x-2 pb-2">
                 {onlineUsers.map((onlineUser, index) => (
-                  <div 
-                    key={onlineUser.id} 
+                  <div
+                    key={onlineUser.id}
                     className="flex-shrink-0 relative cursor-pointer animate-fade-in hover:scale-105 transition-transform duration-200"
                     style={{ animationDelay: `${index * 0.1}s` }}
                     onClick={() => onSelectChat(onlineUser.id)}
                   >
                     <img
-                      src={onlineUser.profilePicture || 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'}
+                      src={
+                        onlineUser.profilePicture ||
+                        "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                      }
                       alt={onlineUser.username}
                       className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md"
                     />
@@ -276,7 +286,9 @@ export function ChatSidebar({
                   </div>
                 ))}
                 {onlineUsers.length === 0 && (
-                  <p className="text-gray-500 text-xs italic text-center w-full">{t("Aucun utilisateur en ligne")}</p>
+                  <p className="text-gray-500 text-xs italic text-center w-full">
+                    {t("Aucun utilisateur en ligne")}
+                  </p>
                 )}
               </div>
             </div>
