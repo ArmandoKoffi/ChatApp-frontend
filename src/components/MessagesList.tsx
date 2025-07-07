@@ -48,13 +48,51 @@ export function MessagesList({
           // Ensure the data is in the correct format before setting it
           const data = response.data.data || [];
           const formattedMessages = data.map((msg) => {
-            const profilePicture =
-              msg.user?.profilePicture || msg.avatar || "/placeholder.svg";
-            console.log(
-              `Profile picture for ${
-                msg.user?.username || "Unknown User"
-              }: ${profilePicture}`
+            // Fonction pour valider et nettoyer l'URL de la photo de profil
+            const getValidProfilePicture = (picture) => {
+              if (!picture || typeof picture !== 'string') return "/placeholder.svg";
+              
+              // Nettoyer la chaîne de caractères étranges
+              const cleanPicture = picture.trim();
+              
+              // Détecter les chaînes de hash malformées (comme dans l'erreur)
+              if (cleanPicture.length > 50 && cleanPicture.includes(':') && !cleanPicture.startsWith('http')) {
+                console.warn('Detected malformed hash-like profile picture URL, using placeholder');
+                return "/placeholder.svg";
+              }
+              
+              // Si c'est une chaîne vide
+              if (!cleanPicture) {
+                return "/placeholder.svg";
+              }
+              
+              // Vérifier si c'est une URL valide
+              try {
+                if (cleanPicture.startsWith('http://') || cleanPicture.startsWith('https://')) {
+                  new URL(cleanPicture);
+                  return cleanPicture;
+                }
+                // Si c'est un chemin relatif valide
+                if (cleanPicture.startsWith('/')) {
+                  return cleanPicture;
+                }
+                // Si c'est un nom de fichier simple
+                if (/^[a-zA-Z0-9._-]+\.(jpg|jpeg|png|gif|svg|webp)$/i.test(cleanPicture)) {
+                  return `/uploads/${cleanPicture}`;
+                }
+                // Si c'est une chaîne étrange, utiliser placeholder
+                console.warn('Unrecognized profile picture format, using placeholder');
+                return "/placeholder.svg";
+              } catch (error) {
+                console.warn('Error validating profile picture URL, using placeholder');
+                return "/placeholder.svg";
+              }
+            };
+            
+            const profilePicture = getValidProfilePicture(
+              msg.user?.profilePicture || msg.avatar
             );
+            
             return {
               id: msg._id || msg.id || String(Date.now() + Math.random()),
               name: msg.user?.username || msg.name || "Unknown User",
@@ -155,6 +193,35 @@ export function MessagesList({
           const response = await api.get(`/users/${userId}`);
           if (response.data.success) {
             const userData = response.data.data;
+            
+            // Fonction pour valider l'URL de la photo de profil
+            const getValidProfilePicture = (picture) => {
+              if (!picture || typeof picture !== 'string') return "/placeholder.svg";
+              
+              const cleanPicture = picture.trim();
+              
+              // Détecter les chaînes de hash malformées
+              if (cleanPicture.length > 50 && cleanPicture.includes(':') && !cleanPicture.startsWith('http')) {
+                return "/placeholder.svg";
+              }
+              
+              try {
+                if (cleanPicture.startsWith('http://') || cleanPicture.startsWith('https://')) {
+                  new URL(cleanPicture);
+                  return cleanPicture;
+                }
+                if (cleanPicture.startsWith('/')) {
+                  return cleanPicture;
+                }
+                if (/^[a-zA-Z0-9._-]+\.(jpg|jpeg|png|gif|svg|webp)$/i.test(cleanPicture)) {
+                  return `/uploads/${cleanPicture}`;
+                }
+                return "/placeholder.svg";
+              } catch {
+                return "/placeholder.svg";
+              }
+            };
+            
             setMessages((prev) => {
               const updatedMessages = [...prev];
               const index = updatedMessages.findIndex(
@@ -164,7 +231,7 @@ export function MessagesList({
                 updatedMessages[index] = {
                   ...updatedMessages[index],
                   name: userData.username || "Unknown User",
-                  avatar: userData.profilePicture || "/placeholder.svg",
+                  avatar: getValidProfilePicture(userData.profilePicture),
                   online: userData.isOnline || false,
                 };
               }
@@ -194,13 +261,62 @@ export function MessagesList({
         const { userId, profilePicture, username } = data;
         console.log("Profile updated:", data);
 
+        // Valider l'URL de la photo de profil
+        const getValidProfilePicture = (picture) => {
+          if (!picture || typeof picture !== 'string') return "/placeholder.svg";
+          
+          const cleanPicture = picture.trim();
+          
+          // Détecter les chaînes de hash malformées
+          if (cleanPicture.length > 50 && cleanPicture.includes(':') && !cleanPicture.startsWith('http')) {
+            return "/placeholder.svg";
+          }
+          
+          try {
+            if (cleanPicture.startsWith('http://') || cleanPicture.startsWith('https://')) {
+              new URL(cleanPicture);
+              return cleanPicture;
+            }
+            if (cleanPicture.startsWith('/')) {
+              return cleanPicture;
+            }
+            if (/^[a-zA-Z0-9._-]+\.(jpg|jpeg|png|gif|svg|webp)$/i.test(cleanPicture)) {
+              return `/uploads/${cleanPicture}`;
+            }
+            return "/placeholder.svg";
+          } catch {
+            return "/placeholder.svg";
+          }
+        };
+
         updateMessageInList(userId, {
-          avatar: profilePicture,
+          avatar: getValidProfilePicture(profilePicture),
           name: username,
         });
       });
 
-      // Conserver les autres événements existants...
+      // Écouter les messages marqués comme lus
+      socketConnection.on("messageRead", (data) => {
+        const { conversationId, userId } = data;
+        console.log("Message marked as read:", data);
+        
+        updateMessageInList(conversationId || userId, {
+          unread: false,
+          messageStatus: "read",
+        });
+      });
+
+      // Écouter les mises à jour de statut utilisateur (en ligne/hors ligne)
+      socketConnection.on("userStatusUpdate", (data) => {
+        const { userId, isOnline } = data;
+        console.log("User status updated:", data);
+        
+        updateMessageInList(userId, {
+          online: isOnline,
+        });
+      });
+
+      // Écouter les nouveaux messages privés
       socketConnection.on("privateMessage", async (data) => {
         const { senderId, content, timestamp } = data;
         console.log("Message reçu:", data);
@@ -215,14 +331,51 @@ export function MessagesList({
         await fetchAndUpdateUserData(senderId);
       });
 
+      // Écouter les messages envoyés (pour mettre à jour la liste)
+      socketConnection.on("privateMessageSent", async (data) => {
+        const { receiverId, content, timestamp } = data;
+        console.log("Message envoyé:", data);
+
+        updateMessageInList(receiverId, {
+          lastMessage: content,
+          time: new Date(timestamp).toLocaleTimeString(),
+          unread: false,
+          messageStatus: "sent",
+        });
+
+        await fetchAndUpdateUserData(receiverId);
+      });
+
+      // Écouter les mises à jour de connexion/déconnexion
+      socketConnection.on("userOnline", (data) => {
+        const { userId } = data;
+        console.log("User came online:", userId);
+        
+        updateMessageInList(userId, {
+          online: true,
+        });
+      });
+
+      socketConnection.on("userOffline", (data) => {
+        const { userId } = data;
+        console.log("User went offline:", userId);
+        
+        updateMessageInList(userId, {
+          online: false,
+        });
+      });
+
       return () => {
-        socketConnection.off("messageListUpdate");
-        socketConnection.off("userProfileUpdated");
-        socketConnection.off("privateMessage");
-        socketConnection.off("privateMessageSent");
-        socketConnection.off("profileUpdate");
-        socketConnection.off("messageRead");
-        socketConnection.off("userStatusUpdate");
+        if (socketConnection) {
+          socketConnection.off("messageListUpdate");
+          socketConnection.off("userProfileUpdated");
+          socketConnection.off("privateMessage");
+          socketConnection.off("privateMessageSent");
+          socketConnection.off("messageRead");
+          socketConnection.off("userStatusUpdate");
+          socketConnection.off("userOnline");
+          socketConnection.off("userOffline");
+        }
       };
     }
   }, [user]);
@@ -267,7 +420,45 @@ export function MessagesList({
       {filteredMessages.map((message) => (
         <div
           key={message.id}
-          onClick={() => onSelectChat(message.id)}
+          onClick={async () => {
+            // Marquer le message comme lu si il était non lu
+            if (message.unread) {
+              try {
+                const api = (await import("../services/api")).default;
+                await api.post(`/messages/mark-read`, {
+                  conversationId: message.id,
+                  userId: message.id
+                });
+                
+                // Mettre à jour localement
+                setMessages((prev) => {
+                  const updatedMessages = [...prev];
+                  const index = updatedMessages.findIndex((msg) => msg.id === message.id);
+                  if (index !== -1) {
+                    updatedMessages[index] = {
+                      ...updatedMessages[index],
+                      unread: false,
+                      messageStatus: "read",
+                    };
+                  }
+                  return updatedMessages;
+                });
+                
+                // Émettre l'événement Socket.IO pour notifier les autres clients
+                const socketConnection = (window as WindowWithSocket).socket;
+                if (socketConnection) {
+                  socketConnection.emit("markMessageAsRead", {
+                    conversationId: message.id,
+                    userId: message.id
+                  });
+                }
+              } catch (error) {
+                console.error("Error marking message as read:", error);
+              }
+            }
+            
+            onSelectChat(message.id);
+          }}
           className={`flex items-center p-3 rounded-lg cursor-pointer transition-colors ${
             selectedChat === message.id ? "bg-blue-50" : "hover:bg-gray-50"
           }`}
@@ -297,13 +488,17 @@ export function MessagesList({
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <p className="text-sm text-gray-600 truncate flex-1">
+              <p className={`text-sm truncate flex-1 ${
+                message.unread 
+                  ? "text-gray-900 font-bold" 
+                  : "text-gray-600"
+              }`}>
                 {message.lastMessage}
               </p>
               <div className="flex items-center ml-2">
                 {getMessageIcon(message.messageStatus)}
                 {message.unread && (
-                  <div className="w-2 h-2 bg-green-400 rounded-full ml-2"></div>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full ml-2"></div>
                 )}
               </div>
             </div>
