@@ -476,14 +476,14 @@ export function ChatArea({
       socketConnection.on("privateMessage", handlePrivateMessage);
       socketConnection.on("privateMessageSent", handlePrivateMessageSent);
       socketConnection.on("typing", handleTyping);
-      socketConnection.on("profileUpdate", handleProfileUpdate);
+      socketConnection.on("userProfileUpdated", handleProfileUpdate);
 
       return () => {
         socketConnection.off("onlineUsers", handleOnlineUsers);
         socketConnection.off("privateMessage", handlePrivateMessage);
         socketConnection.off("privateMessageSent", handlePrivateMessageSent);
         socketConnection.off("typing", handleTyping);
-        socketConnection.off("profileUpdate", handleProfileUpdate);
+        socketConnection.off("userProfileUpdated", handleProfileUpdate);
         if (!(window as WindowWithSocket).socket) {
           socketConnection.disconnect();
           setSocket(null);
@@ -1030,7 +1030,6 @@ export function ChatArea({
         </div>
 
         <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
-          <div className="w-2 h-2 sm:w-3 sm:h-3 bg-green-400 rounded-full animate-pulse"></div>
           <button
             onClick={startAudioCall}
             className="p-1.5 sm:p-2 hover:bg-gray-100 rounded-lg transition-all duration-200 hover:scale-105 transform"
