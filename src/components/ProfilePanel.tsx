@@ -1,18 +1,15 @@
 import { useState, useEffect } from 'react';
-import { ChevronRight, Camera, User } from 'lucide-react';
+import { ChevronRight, User } from 'lucide-react';
 import { useLanguage } from './LanguageContext';
-import { useAuthContext } from '../contexts/AuthContext';
 import userService from '../services/userService';
-import { useToast } from '../hooks';
+import io from 'socket.io-client';
 
 interface ProfilePanelProps {
-  selectedChat: string;
+  selectedChat?: string;
 }
 
 export function ProfilePanel({ selectedChat }: ProfilePanelProps) {
   const { t } = useLanguage();
-  const { user, updateUser } = useAuthContext();
-  const { toast } = useToast();
   const [showMediaModal, setShowMediaModal] = useState(false);
   const [showLinksModal, setShowLinksModal] = useState(false);
   const [showFilesModal, setShowFilesModal] = useState(false);
@@ -24,21 +21,13 @@ export function ProfilePanel({ selectedChat }: ProfilePanelProps) {
     status: ''
   });
   const [loading, setLoading] = useState(true);
-  const [profilePicture, setProfilePicture] = useState<File | null>(null);
-  const [showProfileUpdate, setShowProfileUpdate] = useState(false);
 
   useEffect(() => {
     const fetchUserProfile = async () => {
-      if (user) {
-        setProfile({
-          name: user.username || 'User',
-          avatar: user.profilePicture || '',
-          status: user.isOnline ? t('online') : t('offline')
-        });
-        setLoading(false);
-      } else {
+      if (selectedChat) {
+        setLoading(true);
         try {
-          const response = await userService.getUserById(selectedChat || 'me');
+          const response = await userService.getUserById(selectedChat);
           if (response.success) {
             setProfile({
               name: response.data.username || 'User',
@@ -46,90 +35,53 @@ export function ProfilePanel({ selectedChat }: ProfilePanelProps) {
               status: response.data.isOnline ? t('online') : t('offline')
             });
           }
-          setLoading(false);
         } catch (error) {
           console.error('Error fetching user profile:', error);
+        } finally {
           setLoading(false);
         }
       }
     };
 
     fetchUserProfile();
-  }, [user, selectedChat, t]);
 
-  const handleProfilePictureChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setProfilePicture(file);
-      try {
-        const formData = {
-          profilePicture: file
-        };
-        const response = await userService.updateProfile(formData);
-        if (response.success) {
-          setProfile(prev => ({ ...prev, avatar: response.data.profilePicture }));
-          updateUser(response.data);
-          toast({
-            title: t('profileUpdated'),
-            description: t('profilePictureUpdatedSuccess'),
-            variant: 'default'
-          });
-          // Refresh user data from backend to ensure latest data is displayed
-          const refreshedUser = await userService.getUserById('me');
-          if (refreshedUser.success) {
-            updateUser(refreshedUser.data);
-            setProfile({
-              name: refreshedUser.data.username || 'User',
-              avatar: refreshedUser.data.profilePicture || '',
-              status: refreshedUser.data.isOnline ? t('online') : t('offline')
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error updating profile picture:', error);
-        toast({
-          title: t('error'),
-          description: t('profilePictureUpdateFailed'),
-          variant: 'destructive'
-        });
+    // Configuration Socket.IO pour les mises à jour en temps réel
+    const socket = io('https://chatapp-shi2.onrender.com');
+    
+    const handleProfileUpdate = (data: { userId: string; profilePicture?: string; username?: string }) => {
+      const { userId, profilePicture, username } = data;
+      if (userId === selectedChat) {
+        setProfile(prev => ({
+          ...prev,
+          avatar: profilePicture || prev.avatar,
+          name: username || prev.name,
+        }));
       }
-    }
-  };
+    };
 
-  const handleRemoveProfilePicture = async () => {
-    try {
-      const formData = {
-        removeProfilePicture: true
-      };
-      const response = await userService.updateProfile(formData);
-      if (response.success) {
-        setProfile(prev => ({ ...prev, avatar: response.data.profilePicture }));
-        updateUser(response.data);
-        toast({
-          title: t('profileUpdated'),
-          description: t('profilePictureRemovedSuccess'),
-          variant: 'default'
-        });
-        // Refresh user data from backend to ensure latest data is displayed
-        const refreshedUser = await userService.getUserById('me');
-        if (refreshedUser.success) {
-          updateUser(refreshedUser.data);
-          setProfile({
-            name: refreshedUser.data.username || 'User',
-            avatar: refreshedUser.data.profilePicture || '',
-            status: refreshedUser.data.isOnline ? t('online') : t('offline')
-          });
-        }
+    const handleOnlineUsers = (users: string[]) => {
+      if (selectedChat && users.includes(selectedChat)) {
+        setProfile(prev => ({
+          ...prev,
+          status: t('online')
+        }));
+      } else if (selectedChat) {
+        setProfile(prev => ({
+          ...prev,
+          status: t('offline')
+        }));
       }
-    } catch (error) {
-      console.error('Error removing profile picture:', error);
-      toast({
-        title: t('error'),
-        description: t('profilePictureRemoveFailed'),
-        variant: 'destructive'
-      });
-    }
-  };
+    };
+
+    socket.on('userProfileUpdated', handleProfileUpdate);
+    socket.on('onlineUsers', handleOnlineUsers);
+
+    return () => {
+      socket.off('userProfileUpdated', handleProfileUpdate);
+      socket.off('onlineUsers', handleOnlineUsers);
+      socket.disconnect();
+    };
+  }, [selectedChat, t]);
 
   interface MediaItem {
     id: number;
@@ -253,7 +205,7 @@ export function ProfilePanel({ selectedChat }: ProfilePanelProps) {
           } else {
             const filesData = await filesResponse.json();
             if (filesData.success) {
-              setFiles(filesData.files.slice(0, 3) || []);
+              setFiles(filesData.files.slice(0, 2) || []);
               setAllFiles(filesData.files || []);
             } else {
               setFilesError(filesData.message || 'Error fetching files');
@@ -271,162 +223,153 @@ export function ProfilePanel({ selectedChat }: ProfilePanelProps) {
     fetchProfileData();
   }, [selectedChat]);
 
+  if (loading) {
+    return (
+      <div className="w-80 bg-white border-l border-gray-200 p-6">
+        <div className="animate-pulse">
+          <div className="w-20 h-20 bg-gray-300 rounded-full mx-auto mb-4"></div>
+          <div className="h-4 bg-gray-300 rounded w-3/4 mx-auto mb-2"></div>
+          <div className="h-3 bg-gray-300 rounded w-1/2 mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!selectedChat) {
+    return (
+      <div className="w-80 bg-white border-l border-gray-200 p-6 flex items-center justify-center">
+        <div className="text-center text-gray-500">
+          <User className="w-12 h-12 mx-auto mb-2 opacity-50" />
+          <p>{t('selectChatToViewProfile')}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full bg-white p-6 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-500 scrollbar-track-transparent">
+    <div className="w-80 bg-white border-l border-gray-200 overflow-y-auto">
       {/* Profile Header */}
-      <div className="text-center mb-8">
-        {loading ? (
-          <div className="w-24 h-24 bg-gray-200 rounded-full mx-auto mb-4 animate-pulse"></div>
-        ) : (
+      <div className="p-6 border-b border-gray-100">
+        <div className="text-center">
           <div className="relative inline-block">
-            <div className="w-24 h-24 bg-gray-200 rounded-full mx-auto mb-4 overflow-hidden flex items-center justify-center">
-              {profile.avatar ? (
-                <img 
-                  src={profile.avatar} 
-                  alt={profile.name}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <User className="w-12 h-12 text-gray-400" />
-              )}
-            </div>
-            {user && user._id === selectedChat && (
-              <label htmlFor="profilePictureUpdate" className="absolute bottom-0 right-0 bg-blue-600 text-white p-1 rounded-full cursor-pointer hover:bg-blue-700">
-                <Camera className="w-4 h-4" />
-                <input id="profilePictureUpdate" type="file" accept="image/*" onChange={handleProfilePictureChange} className="hidden" aria-label="Update profile picture" />
-              </label>
+            {profile.avatar ? (
+              <img
+                src={profile.avatar}
+                alt={profile.name}
+                className="w-20 h-20 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-20 h-20 rounded-full bg-gray-300 flex items-center justify-center">
+                <User className="w-8 h-8 text-gray-600" />
+              </div>
             )}
           </div>
-        )}
-        <h2 className="text-xl font-semibold text-gray-900">{loading ? 'Loading...' : profile.name}</h2>
-        <p className="text-sm text-green-500 font-medium">{profile.status}</p>
-        {user && user._id === selectedChat && (
-          <button 
-            onClick={handleRemoveProfilePicture} 
-            className="mt-2 text-sm text-red-500 hover:text-red-700"
-            disabled={loading || !profile.avatar}
-          >
-            {t('removeProfilePicture')}
-          </button>
-        )}
+          <h3 className="mt-4 text-lg font-semibold text-gray-900">{profile.name}</h3>
+          <p className="text-sm text-gray-500">{profile.status}</p>
+        </div>
       </div>
 
       {/* Media Section */}
-      <div className="mb-8">
+      <div className="p-6 border-b border-gray-100">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-900">{t('mediaSection')} <span className="text-gray-500">{allMediaItems.length}</span></h3>
-          <button className="text-sm text-blue-500 hover:text-blue-600 flex items-center" onClick={() => setShowMediaModal(true)}>
-            {t('seeAll')} <ChevronRight className="w-4 h-4 ml-1" />
-          </button>
+          <h4 className="text-sm font-medium text-gray-900">{t('media')}</h4>
+          {mediaItems.length > 0 && (
+            <button
+              onClick={() => setShowMediaModal(true)}
+              className="text-sm text-blue-600 hover:text-blue-700 flex items-center"
+            >
+              {allMediaItems.length} <ChevronRight className="w-4 h-4 ml-1" />
+            </button>
+          )}
         </div>
-        
         {mediaLoading ? (
-          <div className="text-center p-3">
-            <div className="w-8 h-8 bg-gray-200 rounded-full mx-auto mb-2 animate-pulse"></div>
-            <p className="text-sm text-gray-500">{t('loading')}</p>
+          <div className="grid grid-cols-3 gap-2">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="aspect-square bg-gray-200 rounded animate-pulse"></div>
+            ))}
           </div>
         ) : mediaError ? (
-          <div className="text-center p-3 text-red-500 text-sm">
-            {mediaError}
-          </div>
-        ) : mediaItems.length === 0 ? (
-          <div className="text-center p-3 text-gray-500 text-sm">
-            {t('noMedia')}
-          </div>
-        ) : (
+          <p className="text-sm text-red-500">{mediaError}</p>
+        ) : mediaItems.length > 0 ? (
           <div className="grid grid-cols-3 gap-2">
             {mediaItems.map((item) => (
-              <div key={item.id} className="aspect-square rounded-lg overflow-hidden bg-gray-100">
-                {item.type === 'image' ? (
-                  <img 
-                    src={item.src} 
-                    alt="Media"
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-gray-800 flex items-center justify-center text-white font-semibold">
-                    {item.count}
-                  </div>
-                )}
+              <div key={item.id} className="aspect-square bg-gray-100 rounded overflow-hidden">
+                <img src={item.src} alt="" className="w-full h-full object-cover" />
               </div>
             ))}
           </div>
+        ) : (
+          <p className="text-sm text-gray-500">{t('noMediaShared')}</p>
         )}
       </div>
 
       {/* Links Section */}
-      <div className="mb-8">
+      <div className="p-6 border-b border-gray-100">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-900">{t('linkSection')} <span className="text-gray-500">{allLinks.length}</span></h3>
-          <button className="text-sm text-blue-500 hover:text-blue-600 flex items-center" onClick={() => setShowLinksModal(true)}>
-            {t('seeAll')} <ChevronRight className="w-4 h-4 ml-1" />
-          </button>
+          <h4 className="text-sm font-medium text-gray-900">{t('links')}</h4>
+          {links.length > 0 && (
+            <button
+              onClick={() => setShowLinksModal(true)}
+              className="text-sm text-blue-600 hover:text-blue-700 flex items-center"
+            >
+              {allLinks.length} <ChevronRight className="w-4 h-4 ml-1" />
+            </button>
+          )}
         </div>
-        
         {linksLoading ? (
-          <div className="text-center p-3">
-            <div className="w-8 h-8 bg-gray-200 rounded-full mx-auto mb-2 animate-pulse"></div>
-            <p className="text-sm text-gray-500">{t('loading')}</p>
+          <div className="space-y-2">
+            <div className="h-4 bg-gray-200 rounded animate-pulse"></div>
+            <div className="h-3 bg-gray-200 rounded w-3/4 animate-pulse"></div>
           </div>
         ) : linksError ? (
-          <div className="text-center p-3 text-red-500 text-sm">
-            {linksError}
-          </div>
-        ) : links.length === 0 ? (
-          <div className="text-center p-3 text-gray-500 text-sm">
-            {t('noLinks')}
+          <p className="text-sm text-red-500">{linksError}</p>
+        ) : links.length > 0 ? (
+          <div className="space-y-2">
+            {links.map((link) => (
+              <div key={link.id} className="p-2 bg-gray-50 rounded">
+                <p className="text-sm font-medium text-gray-900 truncate">{link.title}</p>
+                <p className="text-xs text-gray-500 truncate">{link.preview}</p>
+              </div>
+            ))}
           </div>
         ) : (
-          links.map((link) => (
-            <div key={link.id} className="p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-start space-x-3">
-                <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <div className="w-6 h-6 bg-green-500 rounded"></div>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs text-blue-500 truncate mb-1">{link.title}</p>
-                  <p className="text-xs text-gray-600">{link.preview}</p>
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-        
-        {links.length > 0 && (
-          <button className="text-sm text-blue-500 hover:text-blue-600 flex items-center mt-3">
-            {t('viewMessages')} <ChevronRight className="w-4 h-4 ml-1" />
-          </button>
+          <p className="text-sm text-gray-500">{t('noLinksShared')}</p>
         )}
       </div>
 
       {/* Files Section */}
-      <div>
+      <div className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-900">{t('files')} <span className="text-gray-500">{allFiles.length}</span></h3>
-          <button className="text-sm text-blue-500 hover:text-blue-600 flex items-center" onClick={() => setShowFilesModal(true)}>
-            {t('seeAll')} <ChevronRight className="w-4 h-4 ml-1" />
-          </button>
+          <h4 className="text-sm font-medium text-gray-900">{t('files')}</h4>
+          {files.length > 0 && (
+            <button
+              onClick={() => setShowFilesModal(true)}
+              className="text-sm text-blue-600 hover:text-blue-700 flex items-center"
+            >
+              {allFiles.length} <ChevronRight className="w-4 h-4 ml-1" />
+            </button>
+          )}
         </div>
-        
         {filesLoading ? (
-          <div className="text-center p-3">
-            <div className="w-8 h-8 bg-gray-200 rounded-full mx-auto mb-2 animate-pulse"></div>
-            <p className="text-sm text-gray-500">{t('loading')}</p>
+          <div className="space-y-2">
+            {[1, 2].map((i) => (
+              <div key={i} className="flex items-center space-x-3">
+                <div className="w-8 h-8 bg-gray-200 rounded animate-pulse"></div>
+                <div className="flex-1">
+                  <div className="h-3 bg-gray-200 rounded animate-pulse mb-1"></div>
+                  <div className="h-2 bg-gray-200 rounded w-1/2 animate-pulse"></div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : filesError ? (
-          <div className="text-center p-3 text-red-500 text-sm">
-            {filesError}
-          </div>
-        ) : files.length === 0 ? (
-          <div className="text-center p-3 text-gray-500 text-sm">
-            {t('noFiles')}
-          </div>
-        ) : (
-          <div className="space-y-3">
+          <p className="text-sm text-red-500">{filesError}</p>
+        ) : files.length > 0 ? (
+          <div className="space-y-2">
             {files.map((file) => (
-              <div key={file.id} className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <div className="w-6 h-6 bg-gray-400 rounded"></div>
+              <div key={file.id} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
+                <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
+                  <span className="text-xs font-medium text-blue-600">📄</span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
@@ -435,13 +378,15 @@ export function ProfilePanel({ selectedChat }: ProfilePanelProps) {
               </div>
             ))}
           </div>
+        ) : (
+          <p className="text-sm text-gray-500">{t('noFilesShared')}</p>
         )}
       </div>
 
       {/* Media Modal */}
       {showMediaModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in" onClick={() => setShowMediaModal(false)}>
-          <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto animate-scale-in" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowMediaModal(false)}>
+          <div className="bg-white rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('allMedia')} ({allMediaItems.length})</h3>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
               {allMediaItems.map((item) => (
@@ -466,31 +411,19 @@ export function ProfilePanel({ selectedChat }: ProfilePanelProps) {
 
       {/* Links Modal */}
       {showLinksModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in" onClick={() => setShowLinksModal(false)}>
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto animate-scale-in" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowLinksModal(false)}>
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('allLinks')} ({allLinks.length})</h3>
             <div className="space-y-4">
               {allLinks.map((link) => (
-                <div 
-                  key={link.id} 
-                  className="p-3 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition-all duration-200"
-                  onClick={() => {
-                    console.log(`Navigating to message for link: ${link.title}`);
-                    setSelectedMessage({
-                      title: link.title,
-                      content: link.preview || t('messageContentUnavailable')
-                    });
-                    setShowMessageModal(true);
-                    setShowLinksModal(false);
-                  }}
-                >
+                <div key={link.id} className="p-3 bg-gray-50 rounded-lg">
                   <div className="flex items-start space-x-3">
                     <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center flex-shrink-0">
                       <div className="w-6 h-6 bg-green-500 rounded"></div>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-blue-500 truncate mb-1">{link.title}</p>
-                      <p className="text-xs text-gray-600">{link.preview}</p>
+                      <p className="text-sm font-medium text-gray-900 truncate">{link.title}</p>
+                      <p className="text-xs text-gray-500">{link.preview}</p>
                     </div>
                   </div>
                 </div>
@@ -508,14 +441,14 @@ export function ProfilePanel({ selectedChat }: ProfilePanelProps) {
 
       {/* Files Modal */}
       {showFilesModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in" onClick={() => setShowFilesModal(false)}>
-          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto animate-scale-in" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowFilesModal(false)}>
+          <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('allFiles')} ({allFiles.length})</h3>
             <div className="space-y-3">
               {allFiles.map((file) => (
-                <div key={file.id} className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <div className="w-6 h-6 bg-gray-400 rounded"></div>
+                <div key={file.id} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded">
+                  <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <span className="text-sm font-medium text-blue-600">📄</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
@@ -536,31 +469,16 @@ export function ProfilePanel({ selectedChat }: ProfilePanelProps) {
 
       {/* Message Modal */}
       {showMessageModal && selectedMessage && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in" onClick={() => setShowMessageModal(false)}>
-          <div className="bg-white rounded-lg p-6 max-w-md w-full animate-scale-in" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">{t('associatedMessage')}</h3>
-            <div className="bg-gray-50 p-4 rounded-lg mb-6">
-              <p className="text-sm text-blue-500 mb-2 truncate">{selectedMessage.title}</p>
-              <p className="text-sm text-gray-800">{selectedMessage.content}</p>
-              <p className="text-xs text-gray-500 mt-2">{t('sentOnDateUnavailable')}</p>
-            </div>
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowMessageModal(false)}
-                className="flex-1 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all duration-200"
-              >
-                {t('close')}
-              </button>
-              <button
-                onClick={() => {
-                  setShowMessageModal(false);
-                  setShowLinksModal(true);
-                }}
-                className="flex-1 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition-all duration-200"
-              >
-                {t('returnToLinks')}
-              </button>
-            </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowMessageModal(false)}>
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">{selectedMessage.title}</h3>
+            <p className="text-gray-700 mb-6">{selectedMessage.content}</p>
+            <button
+              onClick={() => setShowMessageModal(false)}
+              className="w-full py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all duration-200"
+            >
+              {t('close')}
+            </button>
           </div>
         </div>
       )}
