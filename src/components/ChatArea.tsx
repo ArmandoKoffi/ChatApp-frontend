@@ -51,6 +51,8 @@ export function ChatArea({
   const [isAudioCall, setIsAudioCall] = useState(false);
   const [showFileErrorModal, setShowFileErrorModal] = useState(false);
   const [fileErrorMessage, setFileErrorMessage] = useState("");
+  const [showBlockedMessage, setShowBlockedMessage] = useState(false);
+  const [blockedMessageText, setBlockedMessageText] = useState('');
   const [messages, setMessages] = useState<{
     [key: string]: {
       id: number;
@@ -414,6 +416,28 @@ export function ChatArea({
         }
       };
 
+      const handleUserBlocked = (data) => {
+        const { blockedBy } = data;
+        if (blockedBy === selectedChat) {
+          setCurrentChat((prev) => ({
+            ...prev,
+            isBlockedByOther: true,
+          }));
+          setBlockedMessageText(t('youHaveBeenBlocked'));
+          setShowBlockedMessage(true);
+        }
+      };
+
+      const handleUserUnblocked = (data) => {
+        const { unblockedBy } = data;
+        if (unblockedBy === selectedChat) {
+          setCurrentChat((prev) => ({
+            ...prev,
+            isBlockedByOther: false,
+          }));
+        }
+      };
+
       const handlePrivateMessageSent = (data) => {
         const { receiverId, content, messageId, timestamp, media } = data;
         console.log("Received confirmation of sent message via Socket.IO", {
@@ -477,6 +501,8 @@ export function ChatArea({
       socketConnection.on("privateMessageSent", handlePrivateMessageSent);
       socketConnection.on("typing", handleTyping);
       socketConnection.on("userProfileUpdated", handleProfileUpdate);
+      socketConnection.on("userBlocked", handleUserBlocked);
+      socketConnection.on("userUnblocked", handleUserUnblocked);
 
       return () => {
         socketConnection.off("onlineUsers", handleOnlineUsers);
@@ -484,6 +510,8 @@ export function ChatArea({
         socketConnection.off("privateMessageSent", handlePrivateMessageSent);
         socketConnection.off("typing", handleTyping);
         socketConnection.off("userProfileUpdated", handleProfileUpdate);
+        socketConnection.off("userBlocked", handleUserBlocked);
+        socketConnection.off("userUnblocked", handleUserUnblocked);
         if (!(window as WindowWithSocket).socket) {
           socketConnection.disconnect();
           setSocket(null);
