@@ -435,6 +435,27 @@ export function ChatArea({
             ...prev,
             isBlockedByOther: false,
           }));
+          setShowBlockedMessage(false);
+        }
+      };
+
+      const handleMessageBlocked = (data) => {
+        const { receiverId, reason } = data;
+        if (receiverId === selectedChat) {
+          if (reason === "blocked") {
+            setBlockedMessageText(t('youHaveBeenBlocked'));
+            setCurrentChat((prev) => ({
+              ...prev,
+              isBlockedByOther: true,
+            }));
+          } else if (reason === "you_blocked_user") {
+            setBlockedMessageText(t('youBlockedThisUser'));
+            setCurrentChat((prev) => ({
+              ...prev,
+              isBlocked: true,
+            }));
+          }
+          setShowBlockedMessage(true);
         }
       };
 
@@ -503,6 +524,7 @@ export function ChatArea({
       socketConnection.on("userProfileUpdated", handleProfileUpdate);
       socketConnection.on("userBlocked", handleUserBlocked);
       socketConnection.on("userUnblocked", handleUserUnblocked);
+      socketConnection.on("messageBlocked", handleMessageBlocked);
 
       return () => {
         socketConnection.off("onlineUsers", handleOnlineUsers);
@@ -512,6 +534,7 @@ export function ChatArea({
         socketConnection.off("userProfileUpdated", handleProfileUpdate);
         socketConnection.off("userBlocked", handleUserBlocked);
         socketConnection.off("userUnblocked", handleUserUnblocked);
+        socketConnection.off("messageBlocked", handleMessageBlocked);
         if (!(window as WindowWithSocket).socket) {
           socketConnection.disconnect();
           setSocket(null);
@@ -1286,6 +1309,24 @@ export function ChatArea({
           </div>
         )}
       </div>
+
+      {/* Blocked Message Alert */}
+      {showBlockedMessage && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-lg p-6 max-w-md shadow-xl border border-gray-200 animate-scale-in">
+            <h3 className="text-lg font-semibold text-red-600 mb-4">
+              {t('messageBlocked')}
+            </h3>
+            <p className="text-sm text-gray-700 mb-6">{blockedMessageText}</p>
+            <button
+              onClick={() => setShowBlockedMessage(false)}
+              className="w-full py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all duration-200"
+            >
+              {t('close')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       <BlockUserModal
