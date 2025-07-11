@@ -164,6 +164,8 @@ export function ChatArea({
 
   useEffect(() => {
     const fetchChatData = async () => {
+      if (!selectedChat) return;
+
       if (selectedChat) {
         setChatLoading(true);
         setChatError(null);
@@ -300,8 +302,8 @@ export function ChatArea({
                     msg.media.type !== "image" &&
                     msg.media.type !== "audio",
                   image:
-                    msg.media && msg.media.type === "image"
-                      ? `https://chatapp-shi2.onrender.com/uploads/messages/${msg.media.url}`
+                    media && media.type === "image"
+                      ? msg.media.url.startsWith('http') ? msg.media.url : `https://chatapp-shi2.onrender.com/uploads/messages/${msg.media.url}`
                       : undefined,
                   audio:
                     msg.media && msg.media.type === "audio"
@@ -346,6 +348,12 @@ export function ChatArea({
     };
 
     fetchChatData();
+
+    // Démarrer l'actualisation automatique
+    const intervalId = setInterval(fetchChatData, 500);
+
+    // Nettoyer l'intervalle lors du démontage du composant
+    return () => clearInterval(intervalId);
   }, [selectedChat, t, user, language]);
 
   // Socket.IO connection setup
