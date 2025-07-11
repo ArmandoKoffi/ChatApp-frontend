@@ -846,7 +846,6 @@ export function ChatArea({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setMessage(e.target.value);
-    // Do not set isTyping for self, only emit to other user
     if (socket && selectedChat && user) {
       const typingStatus = e.target.value.length > 0;
       console.log(
@@ -864,8 +863,14 @@ export function ChatArea({
 
   const handleEmojiSelect = (emoji: string) => {
     setMessage((prev) => prev + emoji);
-    setShowEmojiPicker(false);
-    console.log("Emoji ajouté au message:", emoji);
+    const inputElement = document.querySelector('input[type="text"]') as HTMLInputElement;
+    if (inputElement) {
+      inputElement.focus();
+    }
+  };
+
+  const toggleEmojiPicker = () => {
+    setShowEmojiPicker(!showEmojiPicker);
   };
 
   const handleFileUpload = async () => {
