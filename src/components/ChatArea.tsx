@@ -9,6 +9,7 @@ import {
   Menu,
   UserX,
   Mic,
+  Star,
 } from "lucide-react";
 import { useAuthContext } from "../contexts";
 import { ChatMessages } from "./ChatMessages";
@@ -56,6 +57,7 @@ export function ChatArea({
   const [messages, setMessages] = useState<{
     [key: string]: {
       id: number;
+      messageId: string;
       sender: "me" | "other";
       content: string;
       time: string;
@@ -70,6 +72,7 @@ export function ChatArea({
       isPlayed?: boolean;
       isExpired?: boolean;
       timestamp?: number;
+      isFavorite?: boolean;
     }[];
   }>({});
   // Workaround for TypeScript error with Socket type from socket.io-client
@@ -97,6 +100,67 @@ export function ChatArea({
   const [chatError, setChatError] = useState<string | null>(null);
   const [messagesLoading, setMessagesLoading] = useState(true);
   const [messagesError, setMessagesError] = useState<string | null>(null);
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      const response = await fetch(`https://chatapp-shi2.onrender.com/api/messages/${messageId}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete message');
+      }
+
+      // Mettre à jour l'état local des messages
+      setMessages(prevMessages => {
+        const updatedMessages = { ...prevMessages };
+        if (selectedChat in updatedMessages) {
+          updatedMessages[selectedChat] = updatedMessages[selectedChat].filter(
+            message => message.messageId !== messageId
+          );
+        }
+        return updatedMessages;
+      });
+    } catch (error) {
+      console.error('Error deleting message:', error);
+    }
+  };
+
+  const handleToggleFavorite = async (messageId: string) => {
+    try {
+      const response = await fetch(`https://chatapp-shi2.onrender.com/api/messages/${messageId}/favorite`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to toggle favorite status');
+      }
+
+      const data = await response.json();
+
+      // Mettre à jour l'état local des messages
+      setMessages(prevMessages => {
+        const updatedMessages = { ...prevMessages };
+        if (selectedChat in updatedMessages) {
+          updatedMessages[selectedChat] = updatedMessages[selectedChat].map(message => {
+            if (message.messageId === messageId) {
+              return { ...message, isFavorite: data.data.isFavorite };
+            }
+            return message;
+          });
+        }
+        return updatedMessages;
+      });
+    } catch (error) {
+      console.error('Error toggling favorite status:', error);
+    }
+  };
 
   useEffect(() => {
     const fetchChatData = async () => {
@@ -525,6 +589,31 @@ export function ChatArea({
       socketConnection.on("userBlocked", handleUserBlocked);
       socketConnection.on("userUnblocked", handleUserUnblocked);
       socketConnection.on("messageBlocked", handleMessageBlocked);
+      socketConnection.on("messageDeleted", ({ messageId }) => {
+        setMessages(prev => {
+          const updatedMessages = { ...prev };
+          if (selectedChat in updatedMessages) {
+            updatedMessages[selectedChat] = updatedMessages[selectedChat].filter(
+              message => message.messageId !== messageId
+            );
+          }
+          return updatedMessages;
+        });
+      });
+      socketConnection.on("messageFavoriteUpdated", ({ messageId, isFavorite }) => {
+        setMessages(prev => {
+          const updatedMessages = { ...prev };
+          if (selectedChat in updatedMessages) {
+            updatedMessages[selectedChat] = updatedMessages[selectedChat].map(message => {
+              if (message.messageId === messageId) {
+                return { ...message, isFavorite };
+              }
+              return message;
+            });
+          }
+          return updatedMessages;
+        });
+      });
 
       return () => {
         socketConnection.off("onlineUsers", handleOnlineUsers);
@@ -534,6 +623,8 @@ export function ChatArea({
         socketConnection.off("userProfileUpdated", handleProfileUpdate);
         socketConnection.off("userBlocked", handleUserBlocked);
         socketConnection.off("userUnblocked", handleUserUnblocked);
+        socketConnection.off("messageDeleted");
+        socketConnection.off("messageFavoriteUpdated");
         socketConnection.off("messageBlocked", handleMessageBlocked);
         if (!(window as WindowWithSocket).socket) {
           socketConnection.disconnect();

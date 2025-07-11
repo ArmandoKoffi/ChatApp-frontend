@@ -1,8 +1,11 @@
 
 import { useState } from 'react';
+import { MessageMenu } from './MessageMenu';
+import { useLanguage } from './LanguageContext';
 
 interface Message {
   id: number;
+  messageId: string;
   sender: 'me' | 'other';
   content: string;
   time: string;
@@ -15,21 +18,26 @@ interface Message {
   fileName?: string;
   fileSize?: string;
   isVoiceExpired?: boolean;
+  isFavorite?: boolean;
 }
 
 interface ChatMessagesProps {
   selectedChat: string;
   messages?: Message[];
   onMessageSend?: (message: string) => void;
+  onDeleteMessage?: (messageId: string) => void;
+  onToggleFavorite?: (messageId: string) => void;
 }
 
-export function ChatMessages({ selectedChat, messages: propMessages, onMessageSend }: ChatMessagesProps) {
+export function ChatMessages({ selectedChat, messages: propMessages, onMessageSend, onDeleteMessage, onToggleFavorite }: ChatMessagesProps) {
+  const { t } = useLanguage();
   const [messages, setMessages] = useState<Message[]>(propMessages || []);
   // Mocked messages removed to ensure frontend is data-empty
 
   const addMessage = (content: string, type: 'text' | 'emoji' | 'file' | 'audio' = 'text', extra?: Partial<Message>) => {
     const newMessage: Message = {
       id: messages.length + 1,
+      messageId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       sender: 'me',
       content,
       time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
@@ -66,11 +74,20 @@ export function ChatMessages({ selectedChat, messages: propMessages, onMessageSe
                 )}
                 
                 <div className="space-y-0.5 xs:space-y-1">
-                  <div className={`px-2 xs:px-3 sm:px-4 py-1 xs:py-2 rounded-2xl transition-all duration-300 hover:scale-105 ${
+                  <div className={`relative group px-2 xs:px-3 sm:px-4 py-1 xs:py-2 rounded-2xl transition-all duration-300 hover:scale-105 ${
                     message.sender === 'me' 
                       ? 'bg-blue-500 text-white' 
                       : 'bg-gray-100 text-gray-900'
                   }`}>
+                    <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <MessageMenu
+                        messageId={message.messageId}
+                        isSender={message.sender === 'me'}
+                        isFavorite={message.isFavorite || false}
+                        onDelete={onDeleteMessage || (() => {})}
+                        onToggleFavorite={onToggleFavorite || (() => {})}
+                      />
+                    </div>
                     <p className="text-xs xs:text-sm">{message.content}</p>
                   </div>
                   
