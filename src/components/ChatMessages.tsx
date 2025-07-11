@@ -16,9 +16,14 @@ interface Message {
   audio?: string;
   hasFile?: boolean;
   fileName?: string;
-  fileSize?: string;
+  fileSize?: number;
   isVoiceExpired?: boolean;
   isFavorite?: boolean;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'audio' | 'video' | 'document';
+  mediaName?: string;
+  mediaSize?: number;
+  mediaPublicId?: string;
 }
 
 interface ChatMessagesProps {
@@ -95,16 +100,29 @@ export function ChatMessages({ selectedChat, messages: propMessages, onMessageSe
                     <div className="mt-1 xs:mt-2 animate-scale-in">
                       <img 
                         src={message.image} 
-                        alt="Image partagée"
-                        className="max-w-full h-auto rounded-lg transition-transform duration-300 hover:scale-105"
+                        alt={message.fileName || "Image partagée"}
+                        className="max-w-full h-auto rounded-lg transition-transform duration-300 hover:scale-105 cursor-pointer"
+                        onClick={() => window.open(message.image, '_blank')}
+                        onError={(e) => {
+                          console.error('Error loading image:', message.image);
+                          e.currentTarget.src = '/placeholder.svg';
+                        }}
                       />
                     </div>
                   )}
 
                   {message.hasAudio && !message.isVoiceExpired && (
                     <div className="mt-1 xs:mt-2 animate-scale-in">
-                      <audio controls className="max-w-full">
+                      <audio 
+                        controls 
+                        className="max-w-full"
+                        onError={(e) => {
+                          console.error('Error loading audio:', message.audio);
+                        }}
+                      >
                         <source src={message.audio} type="audio/mpeg" />
+                        <source src={message.audio} type="audio/wav" />
+                        <source src={message.audio} type="audio/ogg" />
                         Votre navigateur ne supporte pas l'audio.
                       </audio>
                     </div>
@@ -120,15 +138,30 @@ export function ChatMessages({ selectedChat, messages: propMessages, onMessageSe
 
                   {message.hasFile && (
                     <div className="mt-1 xs:mt-2 animate-scale-in">
-                      <div className="bg-gray-50 px-3 py-2 rounded-lg border hover:bg-gray-100 transition-colors">
-                        <div className="flex items-center space-x-2">
-                          <div className="text-blue-500">📎</div>
-                          <div>
-                            <div className="text-sm font-medium">{message.fileName}</div>
-                            <div className="text-xs text-gray-500">{message.fileSize}</div>
+                      <a 
+                        href={message.mediaUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="block"
+                      >
+                        <div className="bg-gray-50 px-3 py-2 rounded-lg border hover:bg-gray-100 transition-colors cursor-pointer">
+                          <div className="flex items-center space-x-2">
+                            <div className="text-blue-500">
+                              {message.mediaType === 'video' ? '🎥' : 
+                               message.mediaType === 'audio' ? '🎵' : 
+                               message.mediaType === 'image' ? '🖼️' : '📎'}
+                            </div>
+                            <div>
+                              <div className="text-sm font-medium">{message.fileName || 'Fichier'}</div>
+                              <div className="text-xs text-gray-500">
+                                {message.fileSize ? 
+                                  `${Math.round(message.fileSize / 1024)} KB` : 
+                                  'Taille inconnue'}
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      </a>
                     </div>
                   )}
                   

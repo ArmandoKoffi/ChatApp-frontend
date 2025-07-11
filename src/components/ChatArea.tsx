@@ -296,31 +296,16 @@ export function ChatArea({
                   date: null,
                   hasImage: msg.media && msg.media.type === "image",
                   hasAudio: msg.media && msg.media.type === "audio",
-                  hasFile:
-                    msg.media &&
-                    msg.media.type &&
-                    msg.media.type !== "image" &&
-                    msg.media.type !== "audio",
-                  image:
-                    media && media.type === "image"
-                      ? msg.media.url.startsWith('http') ? msg.media.url : `https://chatapp-shi2.onrender.com/uploads/messages/${msg.media.url}`
-                      : undefined,
-                  audio:
-                    msg.media && msg.media.type === "audio"
-                      ? `https://chatapp-shi2.onrender.com/uploads/messages/${msg.media.url}`
-                      : undefined,
-                  fileName:
-                    msg.media &&
-                    msg.media.type !== "image" &&
-                    msg.media.type !== "audio"
-                      ? "File"
-                      : undefined,
-                  fileSize:
-                    msg.media &&
-                    msg.media.type !== "image" &&
-                    msg.media.type !== "audio"
-                      ? "Unknown size"
-                      : undefined,
+                  hasFile: msg.media && msg.media.type,
+                  image: msg.media && msg.media.type === "image" ? msg.media.url : undefined,
+                  audio: msg.media && msg.media.type === "audio" ? msg.media.url : undefined,
+                  fileName: msg.media ? msg.media.name : undefined,
+                  fileSize: msg.media ? msg.media.size : undefined,
+                  mediaUrl: msg.media ? msg.media.url : undefined,
+                  mediaType: msg.media ? msg.media.type : undefined,
+                  mediaName: msg.media ? msg.media.name : undefined,
+                  mediaSize: msg.media ? msg.media.size : undefined,
+                  mediaPublicId: msg.media ? msg.media.publicId : undefined,
                 }));
                 setMessages((prev) => ({
                   ...prev,
