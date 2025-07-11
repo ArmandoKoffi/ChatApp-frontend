@@ -39,6 +39,7 @@ export function MessagesList({
 
   useEffect(() => {
     const fetchMessages = async () => {
+      console.log('Fetching messages...');
       setLoading(true);
       setError(null);
       try {
@@ -124,7 +125,14 @@ export function MessagesList({
       }
     };
 
+    // Appel initial
     fetchMessages();
+
+    // Mettre en place l'intervalle de mise à jour
+    const updateInterval = setInterval(fetchMessages, 500); // 500ms = 0.5 seconde
+
+    // Nettoyer l'intervalle lors du démontage du composant
+    return () => clearInterval(updateInterval);
   }, [user]);
 
   useEffect(() => {
