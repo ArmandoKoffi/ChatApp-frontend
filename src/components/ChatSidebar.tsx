@@ -11,7 +11,6 @@ import {
   User,
 } from "lucide-react";
 import { useAuthContext } from "../contexts";
-import { ContactList } from "./ContactList";
 import { MessagesList } from "./MessagesList";
 import { ChatRooms } from "./ChatRooms";
 import { OnlineUsers } from "./OnlineUsers";
@@ -61,41 +60,17 @@ export function ChatSidebar({
       }
     });
 
-    socket.on("onlineUsers", async (userIds) => {
-      console.log("Received online users:", userIds);
+    socket.on("onlineUsers", (users) => {
       if (user) {
-        // Filter out the current user from the list
-        const filteredUserIds = userIds.filter((id) => id !== user._id);
-        // Fetch user details for each ID
-        try {
-          const userDetails = [];
-          for (const userId of filteredUserIds) {
-            const response = await fetch(
-              `https://chatapp-shi2.onrender.com/api/users/${userId}`,
-              {
-                headers: {
-                  Authorization: `Bearer ${
-                    localStorage.getItem("token") || ""
-                  }`,
-                },
-              }
-            );
-            if (response.ok) {
-              const data = await response.json();
-              if (data.success) {
-                userDetails.push({
-                  id: data.data._id,
-                  username: data.data.username,
-                  profilePicture: data.data.profilePicture || "",
-                });
-              }
-            }
-          }
-          setOnlineUsers(userDetails);
-        } catch (error) {
-          console.error("Error fetching user details:", error);
-          setOnlineUsers([]);
-        }
+        // Exclure l'utilisateur courant
+        const filteredUsers = users.filter((u) => u._id !== user._id);
+        setOnlineUsers(
+          filteredUsers.map((u) => ({
+            id: u._id,
+            username: u.username,
+            profilePicture: u.profilePicture || "",
+          }))
+        );
       } else {
         setOnlineUsers([]);
       }

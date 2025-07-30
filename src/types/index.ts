@@ -1,14 +1,14 @@
-
-export type UserRole = 'user' | 'admin';
+export type UserRole = "user" | "admin";
 
 export interface User {
-  id: string;
+  id?: string; // optionnel pour compatibilité
+  _id: string;
   username: string;
   email: string;
   age?: number;
-  gender?: 'homme' | 'femme' | 'autre';
+  gender?: "homme" | "femme" | "autre";
   interests?: string[];
-  intentions?: 'amis' | 'rencontres' | 'connaissances' | 'mariage';
+  intentions?: "amis" | "rencontres" | "connaissances" | "mariage";
   profilePicture?: string;
   location?: string;
   role: UserRole;
@@ -21,12 +21,13 @@ export interface ChatRoom {
   id: string;
   name: string;
   description: string;
-  type: 'amis' | 'rencontres' | 'connaissances' | 'mariage' | 'general';
+  type: "amis" | "rencontres" | "connaissances" | "mariage" | "general";
   connectedUsers: number;
   maxUsers?: number;
   isActive: boolean;
   createdAt: Date;
   moderators?: string[];
+  members?: string[];
 }
 
 export interface Message {
@@ -39,6 +40,7 @@ export interface Message {
   isPrivate?: boolean;
   recipientId?: string;
   isReported?: boolean;
+  mediaContentType?: string;
 }
 
 export interface PrivateMessage {
@@ -52,4 +54,13 @@ export interface PrivateMessage {
   isRead: boolean;
 }
 
-export type CurrentView = 'home' | 'bookmarks' | 'messages' | 'gallery' | 'settings' | 'rooms' | 'admin' | 'profile' | 'search';
+export type CurrentView =
+  | "home"
+  | "bookmarks"
+  | "messages"
+  | "gallery"
+  | "settings"
+  | "rooms"
+  | "admin"
+  | "profile"
+  | "search";

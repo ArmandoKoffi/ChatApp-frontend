@@ -9,10 +9,8 @@ import {
   Menu,
   UserX,
   Mic,
-  Star,
 } from "lucide-react";
 import { useAuthContext } from "../contexts";
-import { ChatMessages } from "./ChatMessages";
 import { TypingIndicator } from "./TypingIndicator";
 import { BlockUserModal } from "./BlockUserModal";
 import { EmojiPicker } from "./EmojiPicker";
@@ -31,6 +29,68 @@ interface ChatAreaProps {
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
   onToggleRightSidebar?: () => void;
+}
+
+interface BackendMessage {
+  _id: string;
+  sender: {
+    _id: string;
+  };
+  content: string;
+  createdAt: string;
+  media?: {
+    type: string;
+    url: string;
+    name: string;
+    size: string;
+    publicId: string;
+  };
+}
+
+interface SocketMessage {
+  senderId: string;
+  content: string;
+  messageId: string;
+  timestamp: string;
+  media?: {
+    type: string;
+    url: string;
+  };
+}
+
+interface SocketMessageSent {
+  receiverId: string;
+  content: string;
+  messageId: string;
+  timestamp: string;
+  media?: {
+    type: string;
+    url: string;
+  };
+}
+
+interface TypingData {
+  senderId: string;
+  isTyping: boolean;
+}
+
+interface ProfileUpdateData {
+  userId: string;
+  profilePicture: string;
+  username: string;
+}
+
+interface UserBlockedData {
+  blockedBy: string;
+}
+
+interface UserUnblockedData {
+  unblockedBy: string;
+}
+
+interface MessageBlockedData {
+  receiverId: string;
+  reason: string;
 }
 
 export function ChatArea({
@@ -53,10 +113,10 @@ export function ChatArea({
   const [showFileErrorModal, setShowFileErrorModal] = useState(false);
   const [fileErrorMessage, setFileErrorMessage] = useState("");
   const [showBlockedMessage, setShowBlockedMessage] = useState(false);
-  const [blockedMessageText, setBlockedMessageText] = useState('');
+  const [blockedMessageText, setBlockedMessageText] = useState("");
   const [messages, setMessages] = useState<{
     [key: string]: {
-      id: number;
+      id: string;
       messageId: string;
       sender: "me" | "other";
       content: string;
@@ -76,7 +136,7 @@ export function ChatArea({
     }[];
   }>({});
   // Workaround for TypeScript error with Socket type from socket.io-client
-  const [socket, setSocket] = useState<unknown>(null);
+  const [socket, setSocket] = useState<ReturnType<typeof io> | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
   const [currentChat, setCurrentChat] = useState<{
@@ -101,64 +161,112 @@ export function ChatArea({
   const [messagesLoading, setMessagesLoading] = useState(true);
   const [messagesError, setMessagesError] = useState<string | null>(null);
 
+  // Gestion du pop-up d'options de message
+  const [selectedMessageOptions, setSelectedMessageOptions] = useState<
+    string | null
+  >(null);
+
+  const handleDeleteMessageOption = async () => {
+    if (!selectedMessageOptions) return;
+    await handleDeleteMessage(selectedMessageOptions);
+    setSelectedMessageOptions(null);
+  };
+
+  const handleToggleFavoriteOption = async () => {
+    if (!selectedMessageOptions) return;
+    await handleToggleFavorite(selectedMessageOptions);
+    setSelectedMessageOptions(null);
+  };
+
   const handleDeleteMessage = async (messageId: string) => {
     try {
-      const response = await fetch(`https://chatapp-shi2.onrender.com/api/messages/${messageId}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-        },
-      });
+      const response = await fetch(
+        `https://chatapp-shi2.onrender.com/api/messages/${messageId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+          },
+        }
+      );
 
       if (!response.ok) {
-        throw new Error('Failed to delete message');
+        throw new Error("Failed to delete message");
       }
 
       // Mettre à jour l'état local des messages
-      setMessages(prevMessages => {
+      setMessages((prevMessages) => {
         const updatedMessages = { ...prevMessages };
         if (selectedChat in updatedMessages) {
           updatedMessages[selectedChat] = updatedMessages[selectedChat].filter(
-            message => message.messageId !== messageId
+            (message) => message.messageId !== messageId
           );
         }
         return updatedMessages;
       });
+
+      // Synchronisation sidebar : émission de l'événement pour la suppression
+      if (socket && user) {
+        socket.emit("messageListUpdate", {
+          senderId: user._id,
+          lastMessage: "", // On peut aussi envoyer le nouveau dernier message si besoin
+          timestamp: new Date().toISOString(),
+          isUnread: false,
+          deletedMessageId: messageId,
+        });
+      }
     } catch (error) {
-      console.error('Error deleting message:', error);
+      console.error("Error deleting message:", error);
     }
   };
 
   const handleToggleFavorite = async (messageId: string) => {
     try {
-      const response = await fetch(`https://chatapp-shi2.onrender.com/api/messages/${messageId}/favorite`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
-        },
-      });
+      const response = await fetch(
+        `https://chatapp-shi2.onrender.com/api/messages/${messageId}/favorite`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token") || ""}`,
+          },
+        }
+      );
 
       if (!response.ok) {
-        throw new Error('Failed to toggle favorite status');
+        throw new Error("Failed to toggle favorite status");
       }
 
       const data = await response.json();
 
       // Mettre à jour l'état local des messages
-      setMessages(prevMessages => {
+      setMessages((prevMessages) => {
         const updatedMessages = { ...prevMessages };
         if (selectedChat in updatedMessages) {
-          updatedMessages[selectedChat] = updatedMessages[selectedChat].map(message => {
-            if (message.messageId === messageId) {
-              return { ...message, isFavorite: data.data.isFavorite };
+          updatedMessages[selectedChat] = updatedMessages[selectedChat].map(
+            (message) => {
+              if (message.messageId === messageId) {
+                return { ...message, isFavorite: data.data.isFavorite };
+              }
+              return message;
             }
-            return message;
-          });
+          );
         }
         return updatedMessages;
       });
+
+      // Synchronisation sidebar : émission de l'événement pour le favori
+      if (socket && user) {
+        socket.emit("messageListUpdate", {
+          senderId: user._id,
+          lastMessage: "", // On peut aussi envoyer le nouveau dernier message si besoin
+          timestamp: new Date().toISOString(),
+          isUnread: false,
+          favoriteMessageId: messageId,
+          isFavorite: data.data.isFavorite,
+        });
+      }
     } catch (error) {
-      console.error('Error toggling favorite status:', error);
+      console.error("Error toggling favorite status:", error);
     }
   };
 
@@ -282,31 +390,40 @@ export function ChatArea({
             try {
               messagesData = await messagesResponse.json();
               if (messagesData.success) {
-                const formattedMessages = messagesData.data.map((msg) => ({
-                  id: msg._id || Date.now(),
-                  sender:
-                    String(msg.sender._id) === String(user?._id)
-                      ? "me"
-                      : "other",
-                  content: msg.content || "",
-                  time: new Date(msg.createdAt).toLocaleTimeString(language, {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  }),
-                  date: null,
-                  hasImage: msg.media && msg.media.type === "image",
-                  hasAudio: msg.media && msg.media.type === "audio",
-                  hasFile: msg.media && msg.media.type,
-                  image: msg.media && msg.media.type === "image" ? msg.media.url : undefined,
-                  audio: msg.media && msg.media.type === "audio" ? msg.media.url : undefined,
-                  fileName: msg.media ? msg.media.name : undefined,
-                  fileSize: msg.media ? msg.media.size : undefined,
-                  mediaUrl: msg.media ? msg.media.url : undefined,
-                  mediaType: msg.media ? msg.media.type : undefined,
-                  mediaName: msg.media ? msg.media.name : undefined,
-                  mediaSize: msg.media ? msg.media.size : undefined,
-                  mediaPublicId: msg.media ? msg.media.publicId : undefined,
-                }));
+                const formattedMessages = messagesData.data.map(
+                  (msg: BackendMessage) => ({
+                    id: String(msg._id || Date.now()),
+                    messageId: msg._id ? String(msg._id) : String(Date.now()),
+                    sender:
+                      String(msg.sender._id) === String(user?._id)
+                        ? "me"
+                        : "other",
+                    content: msg.content || "",
+                    time: new Date(msg.createdAt).toLocaleTimeString(language, {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    }),
+                    date: new Date(msg.createdAt).toLocaleDateString(language),
+                    hasImage: msg.media && msg.media.type === "image",
+                    hasAudio: msg.media && msg.media.type === "audio",
+                    hasFile: msg.media && msg.media.type,
+                    image:
+                      msg.media && msg.media.type === "image"
+                        ? msg.media.url
+                        : undefined,
+                    audio:
+                      msg.media && msg.media.type === "audio"
+                        ? msg.media.url
+                        : undefined,
+                    fileName: msg.media ? msg.media.name : undefined,
+                    fileSize: msg.media ? msg.media.size : undefined,
+                    mediaUrl: msg.media ? msg.media.url : undefined,
+                    mediaType: msg.media ? msg.media.type : undefined,
+                    mediaName: msg.media ? msg.media.name : undefined,
+                    mediaSize: msg.media ? msg.media.size : undefined,
+                    mediaPublicId: msg.media ? msg.media.publicId : undefined,
+                  })
+                );
                 setMessages((prev) => ({
                   ...prev,
                   [selectedChat]: formattedMessages || [],
@@ -363,7 +480,9 @@ export function ChatArea({
 
         socketConnection.on("connect", () => {
           console.log("Connected to Socket.IO server");
-          socketConnection.emit("join", user._id);
+          if (user?._id) {
+            socketConnection.emit("join", user._id);
+          }
         });
 
         socketConnection.on("disconnect", () => {
@@ -372,7 +491,9 @@ export function ChatArea({
 
         socketConnection.on("reconnect", () => {
           console.log("Reconnected to Socket.IO server");
-          socketConnection.emit("join", user._id);
+          if (user?._id) {
+            socketConnection.emit("join", user._id);
+          }
         });
 
         socketConnection.on("connect_error", (error) => {
@@ -381,12 +502,14 @@ export function ChatArea({
       }
 
       // Ensure event listeners are registered for the current selected chat
-      const handlePrivateMessage = (data) => {
+      const handlePrivateMessage = (data: SocketMessage) => {
         const { senderId, content, messageId, timestamp, media } = data;
         console.log("Received private message via Socket.IO", {
           senderId,
           content,
           messageId,
+          timestamp,
+          media,
         });
         if (senderId === selectedChat) {
           const time = new Date(timestamp).toLocaleTimeString(language, {
@@ -396,7 +519,7 @@ export function ChatArea({
           setMessages((prev) => {
             const existingMessages = prev[selectedChat] || [];
             // Check if message already exists to avoid duplicates
-            if (existingMessages.some((msg) => msg.id === messageId)) {
+            if (existingMessages.some((msg) => msg.messageId === messageId)) {
               return prev;
             }
             return {
@@ -404,11 +527,12 @@ export function ChatArea({
               [selectedChat]: [
                 ...existingMessages,
                 {
-                  id: messageId || Date.now(), // Use server ID if available
+                  id: String(messageId || Date.now()), // Use server ID if available
+                  messageId: messageId ? String(messageId) : String(Date.now()),
                   sender: "other" as const,
                   content: content || "",
                   time,
-                  date: null,
+                  date: new Date(timestamp).toLocaleDateString(language), // always a string
                   hasImage: media && media.type === "image",
                   hasAudio: media && media.type === "audio",
                   hasFile:
@@ -418,11 +542,15 @@ export function ChatArea({
                     media.type !== "audio",
                   image:
                     media && media.type === "image"
-                      ? media.url.startsWith('http') ? media.url : `https://chatapp-shi2.onrender.com${media.url}`
+                      ? media.url.startsWith("http")
+                        ? media.url
+                        : `https://chatapp-shi2.onrender.com${media.url}`
                       : undefined,
                   audio:
                     media && media.type === "audio"
-                      ? media.url.startsWith('http') ? media.url : `https://chatapp-shi2.onrender.com${media.url}`
+                      ? media.url.startsWith("http")
+                        ? media.url
+                        : `https://chatapp-shi2.onrender.com${media.url}`
                       : undefined,
                   fileName:
                     media && media.type !== "image" && media.type !== "audio"
@@ -439,7 +567,7 @@ export function ChatArea({
         }
       };
 
-      const handleTyping = (data) => {
+      const handleTyping = (data: TypingData) => {
         const { senderId, isTyping } = data;
         if (senderId === selectedChat) {
           console.log(
@@ -451,7 +579,7 @@ export function ChatArea({
         }
       };
 
-      const handleOnlineUsers = (users) => {
+      const handleOnlineUsers = (users: string[]) => {
         setOnlineUsers(users);
         if (currentChat.id && users.includes(currentChat.id)) {
           setCurrentChat((prev) => ({
@@ -462,7 +590,7 @@ export function ChatArea({
         }
       };
 
-      const handleProfileUpdate = (data) => {
+      const handleProfileUpdate = (data: ProfileUpdateData) => {
         const { userId, profilePicture, username } = data;
         if (currentChat.id === userId) {
           setCurrentChat((prev) => ({
@@ -473,19 +601,19 @@ export function ChatArea({
         }
       };
 
-      const handleUserBlocked = (data) => {
+      const handleUserBlocked = (data: UserBlockedData) => {
         const { blockedBy } = data;
         if (blockedBy === selectedChat) {
           setCurrentChat((prev) => ({
             ...prev,
             isBlockedByOther: true,
           }));
-          setBlockedMessageText(t('youHaveBeenBlocked'));
+          setBlockedMessageText(t("youHaveBeenBlocked"));
           setShowBlockedMessage(true);
         }
       };
 
-      const handleUserUnblocked = (data) => {
+      const handleUserUnblocked = (data: UserUnblockedData) => {
         const { unblockedBy } = data;
         if (unblockedBy === selectedChat) {
           setCurrentChat((prev) => ({
@@ -496,17 +624,17 @@ export function ChatArea({
         }
       };
 
-      const handleMessageBlocked = (data) => {
+      const handleMessageBlocked = (data: MessageBlockedData) => {
         const { receiverId, reason } = data;
         if (receiverId === selectedChat) {
           if (reason === "blocked") {
-            setBlockedMessageText(t('youHaveBeenBlocked'));
+            setBlockedMessageText(t("youHaveBeenBlocked"));
             setCurrentChat((prev) => ({
               ...prev,
               isBlockedByOther: true,
             }));
           } else if (reason === "you_blocked_user") {
-            setBlockedMessageText(t('youBlockedThisUser'));
+            setBlockedMessageText(t("youBlockedThisUser"));
             setCurrentChat((prev) => ({
               ...prev,
               isBlocked: true,
@@ -516,7 +644,7 @@ export function ChatArea({
         }
       };
 
-      const handlePrivateMessageSent = (data) => {
+      const handlePrivateMessageSent = (data: SocketMessageSent) => {
         const { receiverId, content, messageId, timestamp, media } = data;
         console.log("Received confirmation of sent message via Socket.IO", {
           receiverId,
@@ -531,7 +659,7 @@ export function ChatArea({
           setMessages((prev) => {
             const existingMessages = prev[selectedChat] || [];
             // Check if message already exists to avoid duplicates
-            if (existingMessages.some((msg) => msg.id === messageId)) {
+            if (existingMessages.some((msg) => msg.messageId === messageId)) {
               return prev;
             }
             return {
@@ -539,7 +667,8 @@ export function ChatArea({
               [selectedChat]: [
                 ...existingMessages,
                 {
-                  id: messageId || Date.now(), // Use server ID if available
+                  id: String(messageId || Date.now()), // Use server ID if available
+                  messageId: messageId ? String(messageId) : String(Date.now()),
                   sender: "me" as const,
                   content: content || "",
                   time,
@@ -553,11 +682,15 @@ export function ChatArea({
                     media.type !== "audio",
                   image:
                     media && media.type === "image"
-                      ? media.url.startsWith('http') ? media.url : `https://chatapp-shi2.onrender.com${media.url}`
+                      ? media.url.startsWith("http")
+                        ? media.url
+                        : `https://chatapp-shi2.onrender.com${media.url}`
                       : undefined,
                   audio:
                     media && media.type === "audio"
-                      ? media.url.startsWith('http') ? media.url : `https://chatapp-shi2.onrender.com${media.url}`
+                      ? media.url.startsWith("http")
+                        ? media.url
+                        : `https://chatapp-shi2.onrender.com${media.url}`
                       : undefined,
                   fileName:
                     media && media.type !== "image" && media.type !== "audio"
@@ -583,30 +716,35 @@ export function ChatArea({
       socketConnection.on("userUnblocked", handleUserUnblocked);
       socketConnection.on("messageBlocked", handleMessageBlocked);
       socketConnection.on("messageDeleted", ({ messageId }) => {
-        setMessages(prev => {
+        setMessages((prev) => {
           const updatedMessages = { ...prev };
           if (selectedChat in updatedMessages) {
-            updatedMessages[selectedChat] = updatedMessages[selectedChat].filter(
-              message => message.messageId !== messageId
-            );
+            updatedMessages[selectedChat] = updatedMessages[
+              selectedChat
+            ].filter((message) => message.messageId !== messageId);
           }
           return updatedMessages;
         });
       });
-      socketConnection.on("messageFavoriteUpdated", ({ messageId, isFavorite }) => {
-        setMessages(prev => {
-          const updatedMessages = { ...prev };
-          if (selectedChat in updatedMessages) {
-            updatedMessages[selectedChat] = updatedMessages[selectedChat].map(message => {
-              if (message.messageId === messageId) {
-                return { ...message, isFavorite };
-              }
-              return message;
-            });
-          }
-          return updatedMessages;
-        });
-      });
+      socketConnection.on(
+        "messageFavoriteUpdated",
+        ({ messageId, isFavorite }) => {
+          setMessages((prev) => {
+            const updatedMessages = { ...prev };
+            if (selectedChat in updatedMessages) {
+              updatedMessages[selectedChat] = updatedMessages[selectedChat].map(
+                (message) => {
+                  if (message.messageId === messageId) {
+                    return { ...message, isFavorite };
+                  }
+                  return message;
+                }
+              );
+            }
+            return updatedMessages;
+          });
+        }
+      );
 
       return () => {
         socketConnection.off("onlineUsers", handleOnlineUsers);
@@ -661,44 +799,49 @@ export function ChatArea({
           if (response.ok) {
             const messagesData = await response.json();
             if (messagesData.success) {
-              const formattedMessages = messagesData.data.map((msg) => ({
-                id: msg._id || Date.now(),
-                sender:
-                  String(msg.sender._id) === String(user?._id) ? "me" : "other",
-                content: msg.content || "",
-                time: new Date(msg.createdAt).toLocaleTimeString(language, {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                }),
-                date: null,
-                hasImage: msg.media && msg.media.type === "image",
-                hasAudio: msg.media && msg.media.type === "audio",
-                hasFile:
-                  msg.media &&
-                  msg.media.type &&
-                  msg.media.type !== "image" &&
-                  msg.media.type !== "audio",
-                image:
-                  msg.media && msg.media.type === "image"
-                    ? `/uploads/messages/${msg.media.url}`
-                    : undefined,
-                audio:
-                  msg.media && msg.media.type === "audio"
-                    ? `/uploads/messages/${msg.media.url}`
-                    : undefined,
-                fileName:
-                  msg.media &&
-                  msg.media.type !== "image" &&
-                  msg.media.type !== "audio"
-                    ? "File"
-                    : undefined,
-                fileSize:
-                  msg.media &&
-                  msg.media.type !== "image" &&
-                  msg.media.type !== "audio"
-                    ? "Unknown size"
-                    : undefined,
-              }));
+              const formattedMessages = messagesData.data.map(
+                (msg: BackendMessage) => ({
+                  id: String(msg._id || Date.now()),
+                  messageId: msg._id ? String(msg._id) : String(Date.now()),
+                  sender:
+                    String(msg.sender._id) === String(user?._id)
+                      ? "me"
+                      : "other",
+                  content: msg.content || "",
+                  time: new Date(msg.createdAt).toLocaleTimeString(language, {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                  date: new Date(msg.createdAt).toLocaleDateString(language),
+                  hasImage: msg.media && msg.media.type === "image",
+                  hasAudio: msg.media && msg.media.type === "audio",
+                  hasFile:
+                    msg.media &&
+                    msg.media.type &&
+                    msg.media.type !== "image" &&
+                    msg.media.type !== "audio",
+                  image:
+                    msg.media && msg.media.type === "image"
+                      ? `/uploads/messages/${msg.media.url}`
+                      : undefined,
+                  audio:
+                    msg.media && msg.media.type === "audio"
+                      ? `/uploads/messages/${msg.media.url}`
+                      : undefined,
+                  fileName:
+                    msg.media &&
+                    msg.media.type !== "image" &&
+                    msg.media.type !== "audio"
+                      ? "File"
+                      : undefined,
+                  fileSize:
+                    msg.media &&
+                    msg.media.type !== "image" &&
+                    msg.media.type !== "audio"
+                      ? "Unknown size"
+                      : undefined,
+                })
+              );
               setMessages((prev) => ({
                 ...prev,
                 [selectedChat]: formattedMessages || [],
@@ -777,7 +920,8 @@ export function ChatArea({
         const data = await response.json();
         if (data.success) {
           const newMessage = {
-            id: data.data._id || Date.now(), // Use server ID if available
+            id: String(data.data._id || Date.now()), // Use server ID if available
+            messageId: data.data._id || String(Date.now()),
             sender: "me" as const,
             content: message,
             time: new Date().toLocaleTimeString(language, {
@@ -789,7 +933,9 @@ export function ChatArea({
           setMessages((prev) => {
             const existingMessages = prev[selectedChat] || [];
             // Check if message already exists to avoid duplicates
-            if (existingMessages.some((msg) => msg.id === newMessage.id)) {
+            if (
+              existingMessages.some((msg) => msg.messageId === newMessage.id)
+            ) {
               return prev;
             }
             return {
@@ -798,7 +944,6 @@ export function ChatArea({
             };
           });
           setMessage("");
-          // Do not set isTyping for self
           setShowEmojiPicker(false);
           // Emit real-time message via Socket.IO
           if (socket && user) {
@@ -807,15 +952,22 @@ export function ChatArea({
               receiverId: selectedChat,
               content: message,
             });
-            (socket as ReturnType<typeof io>).emit("privateMessage", {
+            socket.emit("privateMessage", {
               senderId: user._id,
               receiverId: selectedChat,
               content: message,
               messageId: data.data._id,
               timestamp: new Date().toISOString(),
             });
+            // Synchronisation sidebar : émission de l'événement pour le dernier message
+            socket.emit("messageListUpdate", {
+              senderId: user._id,
+              lastMessage: message,
+              timestamp: new Date().toISOString(),
+              isUnread: false,
+            });
             // Emit typing false when message is sent
-            (socket as ReturnType<typeof io>).emit("typing", {
+            socket.emit("typing", {
               senderId: user._id,
               receiverId: selectedChat,
               isTyping: false,
@@ -846,7 +998,7 @@ export function ChatArea({
           typingStatus ? "typing" : "not typing"
         } to ${selectedChat}`
       );
-      (socket as ReturnType<typeof io>).emit("typing", {
+      socket.emit("typing", {
         senderId: user._id,
         receiverId: selectedChat,
         isTyping: typingStatus,
@@ -856,7 +1008,9 @@ export function ChatArea({
 
   const handleEmojiSelect = (emoji: string) => {
     setMessage((prev) => prev + emoji);
-    const inputElement = document.querySelector('input[type="text"]') as HTMLInputElement;
+    const inputElement = document.querySelector(
+      'input[type="text"]'
+    ) as HTMLInputElement;
     if (inputElement) {
       inputElement.focus();
     }
@@ -865,7 +1019,6 @@ export function ChatArea({
   const toggleEmojiPicker = () => {
     setShowEmojiPicker(!showEmojiPicker);
   };
-
   const handleFileUpload = async () => {
     const input = document.createElement("input");
     input.type = "file";
@@ -880,13 +1033,11 @@ export function ChatArea({
             setShowFileErrorModal(true);
             continue;
           }
-
           if (!file.type.startsWith("video/") && file.size > 20 * 1024 * 1024) {
             setFileErrorMessage(t("fileSizeError"));
             setShowFileErrorModal(true);
             continue;
           }
-
           try {
             const formData = new FormData();
             formData.append("media", file);
@@ -902,17 +1053,18 @@ export function ChatArea({
                 body: formData,
               }
             );
-
             if (!response.ok) {
               const errorText = await response.text();
               console.error("File upload error:", response.status, errorText);
               throw new Error("Failed to upload file");
             }
-
             const data = await response.json();
             if (data.success) {
               const newMessage = {
-                id: data.message.id,
+                id: String(data.message.id),
+                messageId: data.message.id
+                  ? String(data.message.id)
+                  : String(Date.now()),
                 sender: "me" as const,
                 content: file.type.startsWith("image/")
                   ? "Image envoyée"
@@ -925,7 +1077,7 @@ export function ChatArea({
                   hour: "2-digit",
                   minute: "2-digit",
                 }),
-                date: null as string | null,
+                date: new Date().toLocaleDateString(language),
                 hasImage: file.type.startsWith("image/"),
                 hasAudio: file.type.startsWith("audio/"),
                 hasFile:
@@ -968,11 +1120,10 @@ export function ChatArea({
     input.click();
   };
 
-  const handleVoiceMessage = async (audioBlob: Blob, duration: number) => {
-    console.log("Message vocal envoyé, durée:", duration, "s");
+  const handleVoiceMessage = async (audioBlob: Blob) => {
     try {
       const formData = new FormData();
-      formData.append("media", audioBlob, "voice-message.mp3");
+      formData.append("audio", audioBlob, "voice-message.webm");
       formData.append("recipientId", selectedChat);
       const response = await fetch(
         `https://chatapp-shi2.onrender.com/api/messages/private/${selectedChat}/voice`,
@@ -993,14 +1144,17 @@ export function ChatArea({
       if (data.success) {
         const timestamp = Date.now();
         const newMessage = {
-          id: data.message.id,
+          id: String(data.message.id),
+          messageId: data.message.id
+            ? String(data.message.id)
+            : String(Date.now()),
           sender: "me" as const,
           content: t("voiceMessage"),
           time: new Date().toLocaleTimeString(language, {
             hour: "2-digit",
             minute: "2-digit",
           }),
-          date: null as string | null,
+          date: new Date().toLocaleDateString(language),
           hasAudio: true,
           audio: data.message.audioUrl,
           isPlayed: false,
@@ -1009,11 +1163,14 @@ export function ChatArea({
         };
         setMessages((prev) => ({
           ...prev,
-          [selectedChat]: [...(prev[selectedChat] || []), newMessage],
+          [selectedChat]: [
+            ...(prev[selectedChat] || []),
+            {
+              ...newMessage,
+              messageId: newMessage.messageId ?? String(newMessage.id),
+            },
+          ],
         }));
-
-        // Removed timeout for expiration to prevent premature disappearance
-        // Messages will remain visible until played by the recipient
       } else {
         console.error(data.message || "Error sending voice message");
         setFileErrorMessage(t("voiceMessageError"));
@@ -1096,7 +1253,7 @@ export function ChatArea({
     setIsAudioCall(!isAudioCall);
   };
 
-  const handleAudioEnded = async (messageId: number, chatId: string) => {
+  const handleAudioEnded = async (messageId: string, chatId: string) => {
     // Mark as played in the backend and update local state to show as expired
     const message = messages[chatId]?.find((m) => m.id === messageId);
     if (message) {
@@ -1113,7 +1270,9 @@ export function ChatArea({
         if (response.ok) {
           setMessages((prev) => {
             const updatedMessages = prev[chatId].map((msg) =>
-              msg.id === messageId ? { ...msg, isPlayed: true, isExpired: true } : msg
+              msg.id === messageId
+                ? { ...msg, isPlayed: true, isExpired: true }
+                : msg
             );
             return {
               ...prev,
@@ -1154,9 +1313,6 @@ export function ChatArea({
               alt={currentChat.name}
               className="w-10 h-10 rounded-full object-cover"
             />
-            {currentChat.online && (
-              <div className="absolute -bottom-1 -right-1 w-2 h-2 sm:w-3 sm:h-3 bg-green-400 rounded-full border-2 border-white animate-pulse"></div>
-            )}
           </div>
 
           <div className="animate-fade-in min-w-0 flex-1">
@@ -1234,20 +1390,28 @@ export function ChatArea({
                 >
                   <p className="text-sm">{msg.content}</p>
 
-                  {msg.hasImage && (
+                  {msg.hasImage && msg.image && (
                     <div className="mt-2 animate-scale-in">
                       <img
-                        src={msg.image.startsWith('http') ? msg.image : `https://chatapp-shi2.onrender.com${msg.image}`}
+                        src={
+                          msg.image.startsWith("http")
+                            ? msg.image
+                            : `https://chatapp-shi2.onrender.com${msg.image}`
+                        }
                         alt="Image partagée"
                         className="max-w-full h-auto rounded-lg transition-transform duration-300 hover:scale-105"
                         onError={(e) => {
-                          (e.target as HTMLImageElement).src = `https://chatapp-shi2.onrender.com/uploads/messages/${msg.image.split('/').pop()}`;
+                          (
+                            e.target as HTMLImageElement
+                          ).src = `https://chatapp-shi2.onrender.com/uploads/messages/${msg.image
+                            ?.split("/")
+                            .pop()}`;
                         }}
                       />
                     </div>
                   )}
 
-                  {msg.hasAudio && (
+                  {msg.hasAudio && msg.audio && (
                     <div className="mt-2 animate-scale-in">
                       {msg.isExpired ? (
                         <div className="text-xs text-gray-500 italic">
@@ -1259,12 +1423,24 @@ export function ChatArea({
                             controls
                             className="max-w-full"
                             onEnded={() =>
-                              handleAudioEnded(msg.id, selectedChat)
+                              handleAudioEnded(String(msg.id), selectedChat)
                             }
                           >
-                            <source src={msg.audio.startsWith('http') ? msg.audio : `https://chatapp-shi2.onrender.com${msg.audio}`} type="audio/mpeg" onError={(e) => {
-                              (e.target as HTMLSourceElement).src = `https://chatapp-shi2.onrender.com/uploads/messages/${msg.audio.split('/').pop()}`;
-                            }} />
+                            <source
+                              src={
+                                msg.audio.startsWith("http")
+                                  ? msg.audio
+                                  : `https://chatapp-shi2.onrender.com${msg.audio}`
+                              }
+                              type="audio/mpeg"
+                              onError={(e) => {
+                                (
+                                  e.target as HTMLSourceElement
+                                ).src = `https://chatapp-shi2.onrender.com/uploads/messages/${msg.audio
+                                  ?.split("/")
+                                  .pop()}`;
+                              }}
+                            />
                             {t("browserNotSupportAudio")}
                           </audio>
                           <div className="text-xs text-gray-500 italic mt-1">
@@ -1284,7 +1460,10 @@ export function ChatArea({
                           controls
                           className="max-w-full h-auto rounded-lg"
                         >
-                          <source src={`https://chatapp-shi2.onrender.com/uploads/messages/${msg.fileName}`} type="video/mp4" />
+                          <source
+                            src={`https://chatapp-shi2.onrender.com/uploads/messages/${msg.fileName}`}
+                            type="video/mp4"
+                          />
                           {t("browserNotSupportVideo")}
                         </video>
                       ) : (
@@ -1293,7 +1472,12 @@ export function ChatArea({
                             <div className="text-blue-500">📎</div>
                             <div>
                               <div className="text-sm font-medium">
-                                <a href={`https://chatapp-shi2.onrender.com/uploads/messages/${msg.fileName}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                                <a
+                                  href={`https://chatapp-shi2.onrender.com/uploads/messages/${msg.fileName}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline"
+                                >
                                   {msg.fileName}
                                 </a>
                               </div>
@@ -1317,11 +1501,24 @@ export function ChatArea({
               </div>
 
               {msg.sender === "me" && (
-                <img
-                  src={user?.profilePicture || ""}
-                  alt="Moi"
-                  className="w-8 h-8 rounded-full object-cover bg-gray-300 flex-shrink-0 animate-scale-in transition-transform duration-200 hover:scale-110"
-                />
+                <div className="relative flex items-center">
+                  <img
+                    src={user?.profilePicture || ""}
+                    alt="Moi"
+                    className="w-8 h-8 rounded-full object-cover bg-gray-300 flex-shrink-0 animate-scale-in transition-transform duration-200 hover:scale-110"
+                  />
+                  <button
+                    className="absolute -top-2 -right-2 p-1 bg-white rounded-full shadow hover:bg-gray-100 transition-all"
+                    title="Options"
+                    onClick={() =>
+                      setSelectedMessageOptions(
+                        msg.messageId ? String(msg.messageId) : String(msg.id)
+                      )
+                    }
+                  >
+                    <MoreHorizontal className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1404,14 +1601,14 @@ export function ChatArea({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in">
           <div className="bg-white rounded-lg p-6 max-w-md shadow-xl border border-gray-200 animate-scale-in">
             <h3 className="text-lg font-semibold text-red-600 mb-4">
-              {t('messageBlocked')}
+              {t("messageBlocked")}
             </h3>
             <p className="text-sm text-gray-700 mb-6">{blockedMessageText}</p>
             <button
               onClick={() => setShowBlockedMessage(false)}
               className="w-full py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all duration-200"
             >
-              {t('close')}
+              {t("close")}
             </button>
           </div>
         </div>
@@ -1455,6 +1652,36 @@ export function ChatArea({
             >
               {t("close")}
             </button>
+          </div>
+        </div>
+      )}
+
+      {selectedMessageOptions && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-lg p-6 max-w-xs shadow-xl border border-gray-200 animate-scale-in">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Options du message
+            </h3>
+            <div className="space-y-3">
+              <button
+                onClick={handleDeleteMessageOption}
+                className="w-full py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-all duration-200"
+              >
+                Supprimer
+              </button>
+              <button
+                onClick={handleToggleFavoriteOption}
+                className="w-full py-2 bg-yellow-400 text-white rounded-lg hover:bg-yellow-500 transition-all duration-200"
+              >
+                {t("favorite")}
+              </button>
+              <button
+                onClick={() => setSelectedMessageOptions(null)}
+                className="w-full py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-all duration-200"
+              >
+                {t("close")}
+              </button>
+            </div>
           </div>
         </div>
       )}

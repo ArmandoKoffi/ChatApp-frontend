@@ -59,37 +59,19 @@ export function OnlineUsers({ onSelectChat }: OnlineUsersProps) {
       }
 
       socketConnection.on("onlineUsers", async (users) => {
-        try {
-          const api = (await import("../services/api")).default;
-          const updatedUsers: OnlineUser[] = [];
-          for (const userId of users) {
-            if (userId !== user._id) {
-              // Exclude current user
-              try {
-                const response = await api.get(`/users/${userId}`);
-                if (response.data.success) {
-                  const userData = response.data.data;
-                  updatedUsers.push({
-                    id: userId,
-                    name: userData.username || "Unknown User",
-                    avatar: userData.profilePicture || "/placeholder.svg",
-                    status: userData.isOnline ? "online" : "away",
-                  });
-                }
-              } catch (err) {
-                console.error(`Error fetching data for user ${userId}:`, err);
-                updatedUsers.push({
-                  id: userId,
-                  name: "Unknown User",
-                  avatar: "/placeholder.svg",
-                  status: "online",
-                });
-              }
-            }
-          }
-          setOnlineUsers(updatedUsers);
-        } catch (err) {
-          console.error("Error handling online users update:", err);
+        if (user) {
+          // Exclure l'utilisateur courant
+          const filteredUsers = users.filter((u) => u._id !== user._id);
+          setOnlineUsers(
+            filteredUsers.map((u) => ({
+              id: u._id,
+              name: u.username || "Unknown User",
+              avatar: u.profilePicture || "/placeholder.svg",
+              status: u.isOnline ? "online" : "away",
+            }))
+          );
+        } else {
+          setOnlineUsers([]);
         }
       });
 
