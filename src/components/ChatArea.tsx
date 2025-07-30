@@ -1060,6 +1060,7 @@ export function ChatArea({
             }
             const data = await response.json();
             if (data.success) {
+              // Ajout des champs mediaUrl, mediaType, mediaName, mediaSize, mediaContentType pour affichage correct
               const newMessage = {
                 id: String(data.message.id),
                 messageId: data.message.id
@@ -1099,6 +1100,20 @@ export function ChatArea({
                   !file.type.startsWith("audio/")
                     ? `${(file.size / 1024 / 1024).toFixed(2)} MB`
                     : undefined,
+                // Champs pour affichage média générique
+                mediaUrl: data.message.fileUrl || data.message.mediaUrl,
+                mediaType:
+                  data.message.mediaType ||
+                  (file.type.startsWith("image/")
+                    ? "image"
+                    : file.type.startsWith("audio/")
+                    ? "audio"
+                    : file.type.startsWith("video/")
+                    ? "video"
+                    : "document"),
+                mediaName: data.message.fileName || file.name,
+                mediaSize: data.message.fileSize || file.size,
+                mediaContentType: data.message.mediaContentType || file.type,
               };
               setMessages((prev) => ({
                 ...prev,
