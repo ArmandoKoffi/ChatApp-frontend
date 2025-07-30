@@ -118,8 +118,22 @@ export function ChatMessages({
                         onToggleFavorite={onToggleFavorite || (() => {})}
                       />
                     </div>
-                    {/* Affichage natif audio Cloudinary */}
-                    {message.mediaType === "audio" && message.mediaUrl ? (
+                    {/* Affichage natif média Cloudinary (image, audio, vidéo, document) */}
+                    {message.mediaType === "image" && message.mediaUrl ? (
+                      <img
+                        src={message.mediaUrl}
+                        alt={message.mediaName || "Image envoyée"}
+                        className="max-w-full h-auto rounded-lg mt-1 cursor-pointer"
+                        onClick={() => window.open(message.mediaUrl, "_blank")}
+                        onError={(e) => {
+                          console.error(
+                            "Error loading image:",
+                            message.mediaUrl
+                          );
+                          e.currentTarget.src = "/placeholder.svg";
+                        }}
+                      />
+                    ) : message.mediaType === "audio" && message.mediaUrl ? (
                       <audio controls className="max-w-full mt-1">
                         <source
                           src={message.mediaUrl}
@@ -127,83 +141,35 @@ export function ChatMessages({
                         />
                         Votre navigateur ne supporte pas l'audio.
                       </audio>
+                    ) : message.mediaType === "video" && message.mediaUrl ? (
+                      <video controls className="max-w-full mt-1 rounded-lg">
+                        <source
+                          src={message.mediaUrl}
+                          type={message.mediaContentType || "video/mp4"}
+                        />
+                        Votre navigateur ne supporte pas la vidéo.
+                      </video>
+                    ) : message.mediaType === "document" && message.mediaUrl ? (
+                      <a
+                        href={message.mediaUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block mt-1 text-blue-600 underline text-xs xs:text-sm"
+                        title={message.mediaName || "Document envoyé"}
+                      >
+                        📄 {message.mediaName || "Document envoyé"}
+                      </a>
                     ) : (
                       <p className="text-xs xs:text-sm">{message.content}</p>
                     )}
                   </div>
 
-                  {message.hasImage && (
-                    <div className="mt-1 xs:mt-2 animate-scale-in">
-                      <img
-                        src={message.image}
-                        alt={message.fileName || "Image partagée"}
-                        className="max-w-full h-auto rounded-lg transition-transform duration-300 hover:scale-105 cursor-pointer"
-                        onClick={() => window.open(message.image, "_blank")}
-                        onError={(e) => {
-                          console.error("Error loading image:", message.image);
-                          e.currentTarget.src = "/placeholder.svg";
-                        }}
-                      />
-                    </div>
-                  )}
-
-                  {message.hasAudio && !message.isVoiceExpired && (
-                    <div className="mt-1 xs:mt-2 animate-scale-in">
-                      <audio
-                        controls
-                        className="max-w-full"
-                        onError={(e) => {
-                          console.error("Error loading audio:", message.audio);
-                        }}
-                      >
-                        <source src={message.audio} type="audio/mpeg" />
-                        <source src={message.audio} type="audio/wav" />
-                        <source src={message.audio} type="audio/ogg" />
-                        Votre navigateur ne supporte pas l'audio.
-                      </audio>
-                    </div>
-                  )}
-
+                  {/* Affichage vocal expiré (optionnel) */}
                   {message.isVoiceExpired && (
                     <div className="mt-1 xs:mt-2 animate-fade-in">
                       <div className="text-xs text-gray-400 italic bg-gray-50 px-2 py-1 rounded">
                         🎵 Message vocal expiré
                       </div>
-                    </div>
-                  )}
-
-                  {message.hasFile && (
-                    <div className="mt-1 xs:mt-2 animate-scale-in">
-                      <a
-                        href={message.mediaUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block"
-                      >
-                        <div className="bg-gray-50 px-3 py-2 rounded-lg border hover:bg-gray-100 transition-colors cursor-pointer">
-                          <div className="flex items-center space-x-2">
-                            <div className="text-blue-500">
-                              {message.mediaType === "video"
-                                ? "🎥"
-                                : message.mediaType === "audio"
-                                ? "🎵"
-                                : message.mediaType === "image"
-                                ? "🖼️"
-                                : "📎"}
-                            </div>
-                            <div>
-                              <div className="text-sm font-medium">
-                                {message.fileName || "Fichier"}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {message.fileSize
-                                  ? `${Math.round(message.fileSize / 1024)} KB`
-                                  : "Taille inconnue"}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </a>
                     </div>
                   )}
 
